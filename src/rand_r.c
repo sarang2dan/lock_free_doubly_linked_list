@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include "atomic.h"
 #include "rand_r.h"
 #include "util.h"
 
@@ -110,7 +111,7 @@ uint32_t RNG_generate( RNG * rng )
   return 1000;
 }
 
-void RNG_backoff( volatile RNG * rng )
+void RNG_backoff( RNG * rng )
 {
   volatile uint64_t loops = (uint64_t)RNG_generate( rng );
   mem_barrier();

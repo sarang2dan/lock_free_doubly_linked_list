@@ -24,5 +24,5 @@ unsigned long long rdtsc(void);
 
 int RNG_init( RNG * rng, uint32_t seed, uint32_t min, uint32_t max);
 uint32_t RNG_generate( RNG * rng );
-void RNG_backoff( volatile RNG * rng );
+void RNG_backoff( RNG * rng );
 #endif /* _RAND_R_H_ */

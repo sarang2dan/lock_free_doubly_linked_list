@@ -6,12 +6,17 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "lock_free_dlist.h"
 #include "util.h"
 #include "atomic.h"
 
 #ifdef DEBUG
+#include <assert.h>
+
+#define dassert(c) assert(c)
 #define RAW_CHECK(_cond, _msg, ...)   \
   do {                           \
     if( !(_cond) ) {             \
@@ -19,12 +24,11 @@
       fprintf(stderr, _msg, ##__VA_ARGS__ ); \
       fprintf(stderr,"\n");       \
       abort();                    \
-      ASSERT( 0 );              \
+      dassert( 0 );              \
     }                             \
   } while(0)
-#define ASSERT assert
 #else
-#define ASSERT( cond ) 
+#define dassert(c) 
 #define RAW_CHECK(_cond, _msg, ...) 
 #endif
 
@@ -32,8 +36,10 @@ static dlist_node_t * lf_dlist_correct_prev( volatile lf_dlist_t   * l,
                                              volatile dlist_node_t * prev,
                                              volatile dlist_node_t * node );
 
+#if 0
 static void lf_dlist_unmark_node_pointer( volatile lf_dlist_t * l,
                                           volatile dlist_node_t ** node );
+#endif
 
 /* ****************************************************************************
  * dlist_node_t
@@ -58,13 +64,13 @@ int32_t lf_dlist_initiaize( volatile lf_dlist_t    * l,
                             volatile dlist_node_t  * tail,
                             int32_t backoff_cnt_max)
 {
-  ASSERT( l != NULL );
-  ASSERT( head != NULL );
-  ASSERT( tail != NULL );
+  dassert( l != NULL );
+  dassert( head != NULL );
+  dassert( tail != NULL );
 
-  memset( l, 0x00, sizeof(lf_dlist_t) );
+  memset( (void *)l, 0x00, sizeof(lf_dlist_t) );
 
-  (void)RNG_init( l->rng, (uint32_t)rdtsc(), 0, backoff_cnt_max );
+  (void)RNG_init( (RNG *)(l->rng), (uint32_t)rdtsc(), 0, backoff_cnt_max );
 
   l->head = head;
   l->head->next = tail;
@@ -78,11 +84,13 @@ void lf_dlist_finalize( volatile lf_dlist_t * l )
 {
   dassert( l != NULL );
 
-  memset( l, 0x00, sizeof(lf_dlist_t) );
+  memset( (void *)l, 0x00, sizeof(lf_dlist_t) );
 
+#ifdef DEBUG
   CATCH_END;
 
   return;
+#endif
 }
 
 void lf_dlist_single_thread_sanity_check( volatile lf_dlist_t * l )
@@ -135,7 +143,7 @@ dlist_node_t * lf_dlist_get_next( volatile lf_dlist_t * l, volatile dlist_node_t
           node_next = node->next;
 
           mem_barrier();
-  
+
           if( (uint64_t)node_next != ((uint64_t)next | DL_NODE_DELETED) )
             {
               /*  But my next pointer isn't pointing the next with the deleted bit set, */
@@ -158,7 +166,7 @@ dlist_node_t * lf_dlist_get_next( volatile lf_dlist_t * l, volatile dlist_node_t
 
       if( ((uint64_t)next_next & DL_NODE_DELETED) == 0 )
         {
-          return next;
+          return (dlist_node_t *)next;
         }
     }
 
@@ -185,7 +193,7 @@ dlist_node_t * lf_dlist_get_prev( volatile lf_dlist_t * l, volatile dlist_node_t
       if( (prev_next == node) && 
           ((uint64_t)next & DL_NODE_DELETED) == 0 )
         {
-          return prev;
+          return (dlist_node_t *)prev;
         }
       else
         {
@@ -241,9 +249,9 @@ DL_STATUS lf_dlist_insert_before( volatile lf_dlist_t   * l,
 
       /*  Install [node] on prev->next */
       expected = (dlist_node_t *)((uint64_t)pivot & ~DL_NODE_DELETED);
-      if( expected == atomic_cas64( &(pivot_prev->next),
-                                    expected,
-                                    node ) )
+      if( expected == atomic_cas_64( &(pivot_prev->next),
+                                     expected,
+                                     node ) )
         {
           mem_barrier();
           break;
@@ -294,7 +302,7 @@ DL_STATUS lf_dlist_insert_after( volatile lf_dlist_t   * l,
 
       /*  Install [node] after [next] */
       expected = (dlist_node_t *)((uint64_t)prev_next & ~DL_NODE_DELETED);
-      if( expected == atomic_cas64( &prev->next, expected, node ) )
+      if( expected == atomic_cas_64( &prev->next, expected, node ) )
         {
           mem_barrier();
           break;
@@ -383,7 +391,7 @@ DL_STATUS lf_dlist_delete( volatile lf_dlist_t * l, volatile dlist_node_t * node
       /*  Try to set the deleted bit in node->next */
       desired = (dlist_node_t *)((uint64_t)node_next | DL_NODE_DELETED);
 
-      rnode = atomic_cas64( &(node->next), node_next, desired );
+      rnode = atomic_cas_64( &(node->next), node_next, desired );
 
       mem_barrier();
 
@@ -400,7 +408,7 @@ DL_STATUS lf_dlist_delete( volatile lf_dlist_t * l, volatile dlist_node_t * node
 
               desired = (dlist_node_t *)((uint64_t)node_prev | DL_NODE_DELETED);
 
-              if( node_prev == atomic_cas64( &node->prev, node_prev, desired ) )
+              if( node_prev == atomic_cas_64( &node->prev, node_prev, desired ) )
                 {
                   mem_barrier();
                   break;
@@ -412,8 +420,8 @@ DL_STATUS lf_dlist_delete( volatile lf_dlist_t * l, volatile dlist_node_t * node
 
           mem_barrier();
           lf_dlist_correct_prev( l, 
-                                (dlist_node_t *)((uint64_t)node_prev & ~DL_NODE_DELETED),
-                                node_next );
+                                 (dlist_node_t *)((uint64_t)node_prev & ~DL_NODE_DELETED),
+                                 node_next );
 
           return DL_STATUS_OK;
         }
@@ -460,7 +468,7 @@ static dlist_node_t * lf_dlist_correct_prev( volatile lf_dlist_t   * l,
               mem_barrier();
 
               desired = (dlist_node_t *)(((uint64_t)prev_next & ~DL_NODE_DELETED));
-              (void)atomic_cas64( &(last_link->next), prev, desired );
+              (void)atomic_cas_64( &(last_link->next), prev, desired );
               prev = last_link;
               last_link = NULL;
 
@@ -493,7 +501,7 @@ static dlist_node_t * lf_dlist_correct_prev( volatile lf_dlist_t   * l,
         }
 #endif
 
-      if( link1 == atomic_cas64( &node->prev, link1, p ) )
+      if( link1 == atomic_cas_64( &node->prev, link1, p ) )
         {
           mem_barrier();
           prev_cleared_prev = prev_cleared->prev;
@@ -506,7 +514,7 @@ static dlist_node_t * lf_dlist_correct_prev( volatile lf_dlist_t   * l,
       lf_dlist_backoff( l );
     }
 
-  return prev;
+  return (dlist_node_t *)prev;
 }
 
 dlist_node_t * lf_dlist_correct_next( volatile lf_dlist_t   * l,
@@ -540,9 +548,9 @@ dlist_node_t * lf_dlist_correct_next( volatile lf_dlist_t   * l,
           if( (uint64_t)node_next != ((uint64_t)next | DL_NODE_DELETED) )
             {
               /*  Now try to unlink the deleted next node */
-              (void)atomic_cas64( &(node->next),
-                                  next,
-                                  (dlist_node_t *)((uint64_t)next_next & ~DL_NODE_DELETED) );
+              (void)atomic_cas_64( &(node->next),
+                                   next,
+                                   (dlist_node_t *)((uint64_t)next_next & ~DL_NODE_DELETED) );
               continue;
             }
         }
@@ -553,7 +561,7 @@ dlist_node_t * lf_dlist_correct_next( volatile lf_dlist_t   * l,
 
       if( ((uint64_t)next_next & DL_NODE_DELETED) == 0 )
         {
-          return next;
+          return (dlist_node_t *)next;
         }
     }
 
@@ -562,7 +570,7 @@ dlist_node_t * lf_dlist_correct_next( volatile lf_dlist_t   * l,
 
 void lf_dlist_backoff( volatile lf_dlist_t * l )
 {
-  volatile uint64_t loops = (uint64_t)RNG_generate( l->rng );
+  volatile uint64_t loops = (uint64_t)RNG_generate( (RNG *)(l->rng) );
   mem_barrier();
   while( loops-- )
     {
@@ -584,15 +592,16 @@ void lf_dlist_mark_node_pointer( volatile lf_dlist_t * l, volatile dlist_node_t 
                  "cannot mark head node's next pointer" );
 
       if( ((uint64_t)node_ptr & DL_NODE_DELETED) ||
-          ( node_ptr == atomic_cas64( node,
-                                      node_ptr,
-                                      (dlist_node_t *)((uint64_t)node_ptr | flags) ) ) )
+          ( node_ptr == atomic_cas_64( node,
+                                       node_ptr,
+                                       (dlist_node_t *)((uint64_t)node_ptr | flags) ) ) )
         {
           break;
         }
     }
 }
 
+#if 0
 static void lf_dlist_unmark_node_pointer( volatile lf_dlist_t * l,
                                           volatile dlist_node_t ** node )
 {
@@ -602,14 +611,15 @@ static void lf_dlist_unmark_node_pointer( volatile lf_dlist_t * l,
   while( true )
     {
       node_ptr = *node;
-      if( node_ptr == atomic_cas64( node,
-                                    node_ptr,
-                                    (dlist_node_t *)((uint64_t)node_ptr & flags) ) )
+      if( node_ptr == atomic_cas_64( node,
+                                     node_ptr,
+                                     (dlist_node_t *)((uint64_t)node_ptr & flags) ) )
         {
           break;
         }
     }
 }
+#endif
 
 /*  Extract the real underlying node (masking out the MSB and flush if needed) */
 dlist_node_t * lf_dlist_dereference_node_pointer( volatile lf_dlist_t     * l,
@@ -694,25 +704,37 @@ void dlist_cursor_reset( volatile dlist_cursor_t * c )
 
 dlist_node_t * dlist_cursor_next( volatile dlist_cursor_t * c )
 {
+#ifdef DEBUG
+  TRY( c == NULL );
+#endif
+
   c->dir = DL_CURSOR_DIR_FORWARD;
   c->cur_node = lf_dlist_get_next( c->l, c->cur_node );
-  return c->cur_node;
 
+  return (dlist_node_t *)c->cur_node;
+
+#ifdef DEBUG
   CATCH_END;
 
   return NULL;
+#endif
 }
 
 dlist_node_t * dlist_cursor_prev( volatile dlist_cursor_t * c )
 {
+#ifdef DEBUG
+  TRY( c == NULL );
+#endif
   c->dir = DL_CURSOR_DIR_BACKWARD;
   c->cur_node = lf_dlist_get_prev( c->l, c->cur_node );
 
-  return c->cur_node;
+  return (dlist_node_t *)c->cur_node;
 
+#ifdef DEBUG
   CATCH_END;
 
   return NULL;
+#endif
 }
 
 bool dlist_cursor_is_eol( volatile dlist_cursor_t * c )

@@ -50,7 +50,7 @@ CC=gcc
 LD=gcc
 AR=ar
 
-CFLAGS=-Wall
+CFLAGS=-g -Wall -O2
 INCLUDES=-I$(SRC_DIR)
 DEFS=
 
