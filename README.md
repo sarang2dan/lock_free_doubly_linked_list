@@ -1,1 +1,9 @@
-# lock_free_doubly_linked_list
+# Lock-free Doubly Linked List
+
+
+## for test
+
+```
+$ make test
+$ ./bin/test
+```
