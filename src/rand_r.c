@@ -11,14 +11,6 @@
  * RNG: random number generator
  * A fast random (32-bit) number generator, for a uniform distribution (all
  * numbers in the range are equally likely). */
-/* rdtsc(): https://docs.microsoft.com/ko-kr/cpp/intrinsics/rdtsc?view=vs-2017 */
-
-unsigned long long rdtsc(void)
-{
-  unsigned hi, lo;
-  __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
-  return ( (unsigned long long)lo)|( ((unsigned long long)hi)<<32 );
-}
 
 static int generate_seed( void )
 {

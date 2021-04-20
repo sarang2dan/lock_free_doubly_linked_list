@@ -41,12 +41,15 @@ enum _dl_status
  *  Lock-free deques and doubly linked lists.
  *  J. Parallel Distrib. Comput. 68, 7 (July 2008), 1008-1020. */
 
-/* Most significant 2 bits of the next pointer to indicate
+/* Least significant 2 bits of the next pointer to indicate
  * the underlying node is logically DELETED or DIRTY*/
-#define DL_NODE_DIRTY    ((uint64_t)0x4000000000000000) // ((uint64_t)1 << 62)
-#define DL_NODE_DELETED  ((uint64_t)0x8000000000000000) // ((uint64_t)1 << 63)
+/* NOTE: 최상위 2비트는 사용하지 않는 것이 좋음.
+ * HP-UX의 메모리 모델  때문. */
+#define DL_NODE_DIRTY    ((uint64_t)0x0000000000000001) // ((uint64_t)1 << 0)
+#define DL_NODE_DELETED  ((uint64_t)0x0000000000000002) // ((uint64_t)1 << 1)
+#define DL_NODE_DELETED_MASK  ((uint64_t)0xFFFFFFFFFFFFFFFD) // (~DL_NODE_DELETED)
 
-typedef struct _lock_free_doubly_linked_list lf_dlist_t;
+typedef struct _lock_free_doubly_linked_list volatile lf_dlist_t;
 struct _lock_free_doubly_linked_list
 {
   volatile dlist_node_t * volatile head;
@@ -56,9 +59,9 @@ struct _lock_free_doubly_linked_list
 };
 
 int32_t lf_dlist_initiaize( volatile lf_dlist_t    * l,
-                        volatile dlist_node_t  * head,
-                        volatile dlist_node_t  * tail,
-                        int32_t backoff_cnt_max );
+                            volatile dlist_node_t  * head,
+                            volatile dlist_node_t  * tail,
+                            int32_t backoff_cnt_max );
 void lf_dlist_finalize( volatile lf_dlist_t * l );
 
 /*  Verify the links between each pair of nodes (including head and tail). */
@@ -89,7 +92,11 @@ dlist_node_t * lf_dlist_correct_next( volatile lf_dlist_t * l, volatile dlist_no
 void lf_dlist_mark_node_pointer( volatile lf_dlist_t * l, volatile dlist_node_t ** node );
 
 /*  Extract the real underlying node (masking out the MSB and flush if needed) */
-dlist_node_t * lf_dlist_dereference_node_pointer( volatile lf_dlist_t              * l,
+/* Do NOT use this macro function, if PMEM mode. */
+#define lf_dlist_dereference_node_pointer_mem_only( _node ) \
+  (dlist_node_t *)((uint64_t)(_node) & DL_NODE_DELETED_MASK)
+
+dlist_node_t * lf_dlist_dereference_node_pointer( lf_dlist_t             * l,
                                                   volatile dlist_node_t ** node );
 bool lf_dlist_marked_next( volatile dlist_node_t * node );
 bool lf_dlist_marked_prev( volatile dlist_node_t * node );
@@ -101,7 +108,7 @@ enum _dlist_cursor_move_direction
 {
   DL_CURSOR_DIR_NONE     = 0,
   DL_CURSOR_DIR_FORWARD  = 1,  // head -> tail
-  DL_CURSOR_DIR_BACKWARD = 2   // tail -> head 
+  DL_CURSOR_DIR_BACKWARD = 2   // tail -> head
 };
 
 typedef struct _dlist_cursor dlist_cursor_t;
@@ -114,14 +121,15 @@ struct _dlist_cursor
   dlist_cursor_dir_t dir;
 };
 
-int32_t dlist_cursor_open( volatile dlist_cursor_t    * c, 
-                       volatile lf_dlist_t        * l, 
-                       volatile dlist_cursor_dir_t  dir );
-void dlist_cursor_close( volatile dlist_cursor_t * c );
-bool dlist_cursor_is_eol( volatile dlist_cursor_t * c );
+int32_t dlist_cursor_open( dlist_cursor_t    * c,
+                           lf_dlist_t        * l,
+                           dlist_cursor_dir_t  dir );
+void dlist_cursor_close( dlist_cursor_t * c );
+bool dlist_cursor_is_eol( dlist_cursor_t * c );
 
-void dlist_cursor_reset( volatile dlist_cursor_t * c );
-dlist_node_t * dlist_cursor_next( volatile dlist_cursor_t * c );
-dlist_node_t * dlist_cursor_prev( volatile dlist_cursor_t * c );
+void dlist_cursor_reset( dlist_cursor_t * c );
+dlist_node_t * dlist_cursor_next( dlist_cursor_t * c );
+dlist_node_t * dlist_cursor_prev( dlist_cursor_t * c );
+#else // IMPRV_PERF
 
 #endif /* _DOUBLEY_LINKED_LIST_H_ */

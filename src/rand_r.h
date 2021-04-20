@@ -20,8 +20,6 @@ struct _random_number_generator
   uint32_t w_;
 };
 
-unsigned long long rdtsc(void);
-
 int RNG_init( RNG * rng, uint32_t seed, uint32_t min, uint32_t max);
 uint32_t RNG_generate( RNG * rng );
 void RNG_backoff( RNG * rng );

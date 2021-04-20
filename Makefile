@@ -55,7 +55,7 @@ INCLUDES=-I$(SRC_DIR)
 DEFS=
 
 LDFLAGS=-L$(LIB_DIR)
-LD_LIBS=-lthp -lc -lm -lpthread
+LD_LIBS=-lc -lm -lpthread
 
 SRC_DIR=./src
 OBJ_DIR=./obj
@@ -80,6 +80,7 @@ endef
 
 
 LIB_SRCS = $(SRC_DIR)/lock_free_dlist.c \
+					 $(SRC_DIR)/util.c            \
 					 $(SRC_DIR)/rand_r.c
 
 LIB_OBJS = $(LIB_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
@@ -87,6 +88,7 @@ LIB_OBJS = $(LIB_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 TEST_SRCS = $(SRC_DIR)/test.c
 TEST_OBJS = $(TEST_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 TEST_BINS = $(TEST_SRCS:$(SRC_DIR)/%.c=$(BIN_DIR)/%)
+TEST_LDFLAGS = $(LD_LIBS) -llflist -L./lib
 
 OBJS = $(LIB_OBJS) $(TEST_OBJS)
 LIBS = $(LIB_DIR)/liblflist.a
@@ -95,11 +97,11 @@ BINS = $(TEST_BINS)
 all: mkdirs
 	$(Q) $(MAKE) build
 
-test: all $(TEST_OBJS)
-	$(Q) $(MAKE) $(TEST_BINS)
+test: debug $(TEST_OBJS)
+	$(Q) $(LD) $(TEST_OBJS) -o $(TEST_BINS) $(TEST_LDFLAGS) 
 
 debug: 
-	$(Q) $(MAKE) CFLAGS='$(CFLAGS) -g' build
+	$(Q) $(MAKE) CFLAGS='$(CFLAGS) -g -O0' build 
 
 build: $(LIB_OBJS)
 	$(Q) $(MAKE) libs

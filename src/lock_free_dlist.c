@@ -17,19 +17,19 @@
 #include <assert.h>
 
 #define dassert(c) assert(c)
-#define RAW_CHECK(_cond, _msg, ...)   \
-  do {                           \
-    if( !(_cond) ) {             \
-      fprintf(stderr, "Check %s failed: | ", #_cond ); \
-      fprintf(stderr, _msg, ##__VA_ARGS__ ); \
-      fprintf(stderr,"\n");       \
-      abort();                    \
-      dassert( 0 );              \
-    }                             \
+#define RAW_CHECK(_cond, _msg, ...)                     \
+  do {                                                  \
+    if( !(_cond) ) {                                    \
+      fprintf(stderr, "Check %s failed: | ", #_cond );  \
+      fprintf(stderr, _msg, ##__VA_ARGS__ );            \
+      fprintf(stderr,"\n");                             \
+      abort();                                          \
+      dassert( 0 );                                     \
+    }                                                   \
   } while(0)
 #else
-#define dassert(c) 
-#define RAW_CHECK(_cond, _msg, ...) 
+#define dassert(c)
+#define RAW_CHECK(_cond, _msg, ...)
 #endif
 
 static dlist_node_t * lf_dlist_correct_prev( volatile lf_dlist_t   * l,
@@ -126,7 +126,11 @@ dlist_node_t * lf_dlist_get_next( volatile lf_dlist_t * l, volatile dlist_node_t
   while( node != l->tail )
     {
       RAW_CHECK( node, "null current node" );
+#if 1 // IMPRV_PERF
+      next = lf_dlist_dereference_node_pointer_mem_only( node->next );
+#else
       next = lf_dlist_dereference_node_pointer( l, (volatile dlist_node_t **)&(node->next) );
+#endif // IMPRV_PERF
       if( next == NULL )
         {
           return NULL;
@@ -175,22 +179,25 @@ dlist_node_t * lf_dlist_get_next( volatile lf_dlist_t * l, volatile dlist_node_t
 
 dlist_node_t * lf_dlist_get_prev( volatile lf_dlist_t * l, volatile dlist_node_t * node )
 {
-  volatile dlist_node_t * volatile prev      = NULL;
-  volatile dlist_node_t * volatile prev_next = NULL;
-  volatile dlist_node_t * volatile next      = NULL;
+  volatile dlist_node_t * volatile prev;
+  volatile dlist_node_t * volatile prev_next;
+  volatile dlist_node_t * volatile next;
 
   while( node != l->head )
     {
       RAW_CHECK( node, "null current node" );
-
+#if 1 // IMPRV_PERF
+      prev = lf_dlist_dereference_node_pointer_mem_only( node->prev );
+#else
       prev = lf_dlist_dereference_node_pointer( l, (volatile dlist_node_t **)&(node->prev) );
+#endif // IMPRV_PERF
       RAW_CHECK( prev, "null prev pointer in list" );
 
       prev_next = prev->next;
       mem_barrier();
       next = node->next;
 
-      if( (prev_next == node) && 
+      if( (prev_next == node) &&
           ((uint64_t)next & DL_NODE_DELETED) == 0 )
         {
           return (dlist_node_t *)prev;
@@ -228,9 +235,13 @@ DL_STATUS lf_dlist_insert_before( volatile lf_dlist_t   * l,
 
   while( true )
     {
-      pivot_prev = lf_dlist_dereference_node_pointer( 
-                            l, 
-                            (volatile dlist_node_t **)&(pivot->prev) );
+#if 1 // IMPRV_PERF
+      pivot_prev = lf_dlist_dereference_node_pointer_mem_only( pivot->prev );
+#else
+      pivot_prev = lf_dlist_dereference_node_pointer(
+                                                     l,
+                                                     (volatile dlist_node_t **)&(pivot->prev) );
+#endif // IMPRV_PERF
 
       /*  If the guy supposed to be behind me got deleted, fast */
       /*  forward to its next node and retry */
@@ -257,7 +268,7 @@ DL_STATUS lf_dlist_insert_before( volatile lf_dlist_t   * l,
           break;
         }
 
-#if 1 
+#if 1
       pivot_prev = lf_dlist_correct_prev( l, pivot_prev, pivot );
 
       lf_dlist_backoff( l );
@@ -268,7 +279,7 @@ DL_STATUS lf_dlist_insert_before( volatile lf_dlist_t   * l,
 #else
       /*  Failed, get a new hopefully-correct prev */
       pivot_prev = lf_dlist_correct_prev( l, pivot_prev, next );
-      lf_dlist_backoff( l );      
+      lf_dlist_backoff( l );
 #endif
     }
 
@@ -278,8 +289,8 @@ DL_STATUS lf_dlist_insert_before( volatile lf_dlist_t   * l,
   return DL_STATUS_OK;
 }
 
-DL_STATUS lf_dlist_insert_after( volatile lf_dlist_t   * l, 
-                                 volatile dlist_node_t * prev, 
+DL_STATUS lf_dlist_insert_after( volatile lf_dlist_t   * l,
+                                 volatile dlist_node_t * prev,
                                  volatile dlist_node_t * node )
 {
   volatile dlist_node_t * volatile prev_next = NULL;
@@ -310,18 +321,11 @@ DL_STATUS lf_dlist_insert_after( volatile lf_dlist_t   * l,
 
       if( (uint64_t)prev_next & DL_NODE_DELETED )
         {
-#if 1 
           return DL_STATUS_MERGE_IN_PROGRESS;
-#else
-          lf_dlist_delete( l, node );
-          return lf_dlist_insert_before( l, prev, node );
-#endif
         }
 
       lf_dlist_backoff( l );
-#if 1
       return DL_STATUS_MERGE_IN_PROGRESS;
-#endif
     }
 
   RAW_CHECK( prev_next, "invalid prev_next pointer" );
@@ -331,9 +335,9 @@ DL_STATUS lf_dlist_insert_after( volatile lf_dlist_t   * l,
 
 
 #if 0
-리스트 노드 삭제시 lf_dlist_delete()를 호출하는데, 
-이후에 lf_dlist_correct_next()를 호출해야 한다.
-사용방법과 이유는 아래와 같다. 
+리스트 노드 삭제시 lf_dlist_delete()를 호출하는데,
+  이후에 lf_dlist_correct_next()를 호출해야 한다.
+  사용방법과 이유는 아래와 같다.
 {
   cur_node_next = cursor->cur_node->next;
   if( DL_STATUS_OK == lf_dlist_delete( cursor->l, cursor->cur_node ) )
@@ -419,7 +423,7 @@ DL_STATUS lf_dlist_delete( volatile lf_dlist_t * l, volatile dlist_node_t * node
                      "invalid next pointer" );
 
           mem_barrier();
-          lf_dlist_correct_prev( l, 
+          lf_dlist_correct_prev( l,
                                  (dlist_node_t *)((uint64_t)node_prev & ~DL_NODE_DELETED),
                                  node_next );
 
@@ -494,12 +498,12 @@ static dlist_node_t * lf_dlist_correct_prev( volatile lf_dlist_t   * l,
 
       p = (dlist_node_t *)(((uint64_t)prev & ~DL_NODE_DELETED));
 
-#if 1 // imprv safety
+#if 1 // IMPRV_SAFTEY
       if( p == link1 )
         {
           break;
         }
-#endif
+#endif // IMPRV_SAFTEY
 
       if( link1 == atomic_cas_64( &node->prev, link1, p ) )
         {
@@ -527,7 +531,11 @@ dlist_node_t * lf_dlist_correct_next( volatile lf_dlist_t   * l,
   while( node != l->tail )
     {
       RAW_CHECK( node, "null current node" );
+#if 1 // IMPRV_PERF
+      next = lf_dlist_dereference_node_pointer_mem_only( node->next );
+#else
       next = lf_dlist_dereference_node_pointer( l, (volatile dlist_node_t **)&(node->next) );
+#endif // IMPRV_PERF
       if( next == NULL )
         {
           return NULL;
@@ -645,8 +653,8 @@ bool lf_dlist_marked_prev( volatile dlist_node_t * node )
  * dlist_cursor_t
  * */
 
-int32_t dlist_cursor_open( volatile dlist_cursor_t    * c, 
-                           volatile lf_dlist_t        * l, 
+int32_t dlist_cursor_open( dlist_cursor_t    * c,
+                           lf_dlist_t        * l,
                            dlist_cursor_dir_t  dir )
 {
   TRY( c == NULL || l == NULL );
@@ -673,7 +681,7 @@ int32_t dlist_cursor_open( volatile dlist_cursor_t    * c,
   return RC_FAIL;
 }
 
-void dlist_cursor_close( volatile dlist_cursor_t * c )
+void dlist_cursor_close( dlist_cursor_t * c )
 {
   if( c != NULL )
     {
@@ -687,7 +695,7 @@ void dlist_cursor_close( volatile dlist_cursor_t * c )
     }
 }
 
-void dlist_cursor_reset( volatile dlist_cursor_t * c )
+void dlist_cursor_reset( dlist_cursor_t * c )
 {
   if( c != NULL )
     {
@@ -702,7 +710,7 @@ void dlist_cursor_reset( volatile dlist_cursor_t * c )
     }
 }
 
-dlist_node_t * dlist_cursor_next( volatile dlist_cursor_t * c )
+dlist_node_t * dlist_cursor_next( dlist_cursor_t * c )
 {
 #ifdef DEBUG
   TRY( c == NULL );
@@ -720,7 +728,7 @@ dlist_node_t * dlist_cursor_next( volatile dlist_cursor_t * c )
 #endif
 }
 
-dlist_node_t * dlist_cursor_prev( volatile dlist_cursor_t * c )
+dlist_node_t * dlist_cursor_prev( dlist_cursor_t * c )
 {
 #ifdef DEBUG
   TRY( c == NULL );
@@ -737,7 +745,7 @@ dlist_node_t * dlist_cursor_prev( volatile dlist_cursor_t * c )
 #endif
 }
 
-bool dlist_cursor_is_eol( volatile dlist_cursor_t * c )
+bool dlist_cursor_is_eol( dlist_cursor_t * c )
 {
   bool ret = false;
 
