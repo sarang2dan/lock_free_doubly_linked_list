@@ -1313,7 +1313,7 @@ label_aging_again:
       mem_barrier();
 
 #ifdef DEBUG
-      printf("[total aged #:%d][data list #:%d][aging list #:%d]\n",
+      printf("[total aging #:%d][data list #:%d][aging list #:%d]\n",
              g_total_aged_node_cnt,
              t->data_list_count,
              t->aging_list_count );
@@ -1322,7 +1322,7 @@ label_aging_again:
       if( g_is_verbose_short == true )
         {
           if( g_total_aged_node_cnt % print_unit == 0 ) {
-            printf("[total aged #:%d][data list #:%d][aging list #:%d]\n",
+            printf("[total aging #:%d][data list #:%d][aging list #:%d]\n",
                    g_total_aged_node_cnt,
                    t->data_list_count,
                    t->aging_list_count );
