@@ -4,7 +4,7 @@
 - Test on MacOS: NOT works.
   - I just guess MacOS have some problem, not sure.
   - Maybe problems comes from compiler, atomic function or memory fence.
-  - Under MacOS,  you will get better test results when you have did set smaller total thread counts than system's CPU core.
+  - Under MacOS,  you will get better test results when you have did set smaller total thread counts than number of system's CPU cores.
 - No test on WINDOWS.
 
 # How to Build
