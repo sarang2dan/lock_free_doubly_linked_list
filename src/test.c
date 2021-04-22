@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sched.h>
 #include <sys/errno.h>
+#include <signal.h>
 
 #include "util.h"
 #include "atomic.h"
@@ -12,11 +13,25 @@
 
 
 // #define DEBUG 1
+// #define FIXED_THREADS 1
 
+#define THRESHOLD_WORKING_SLOW_EVICTOR  32
+#define THRESHOLD_WORKING_SLOW_AGER     32
+
+#ifdef FIXED_THREADS
+#define MAX_ARGC   2
 #define THR_NUM_INSERT  20
 #define THR_NUM_READ    5
 #define THR_NUM_EVICTOR 1
 #define THR_NUM_AGER    1
+#else /* FIXED_THREADS */
+#define MAX_ARGC   4
+int32_t THR_NUM_INSERT        = 1;
+int32_t THR_NUM_READ          = 1;
+const int32_t THR_NUM_EVICTOR = 1;
+const int32_t THR_NUM_AGER    = 1;
+#endif /* FIXED_THREADS */
+
 #define THR_NUM_MAX (THR_NUM_INSERT + THR_NUM_READ + THR_NUM_EVICTOR + THR_NUM_AGER)
 
 #define RC_EXIT_PROGRAM  1
@@ -358,7 +373,7 @@ label_insert_again:
 
   if( state == 1 )
     {
-      free( node );
+      free( new_node );
     }
 
   return NULL;
@@ -465,7 +480,7 @@ label_try_again:
                    * insert 스레드와 evictor가 서로 충돌하여 역전될 확률이 높아진다. 
                    * 이를 방지하기 위해 데이터 리스트의 개수가 적고, 수행되는
                    * 트랜잭션이 있다면, evictor가 느리게 동작해야 한다. */
-                  if( t->data_list_count <= 32 ) /* && insert threads are doing some operations. */
+                  if( t->data_list_count <= THRESHOLD_WORKING_SLOW_EVICTOR ) /* && insert threads are doing some operations. */
                     {
                       lf_dlist_backoff( t->aging_list );
                       lf_dlist_backoff( t->aging_list );
@@ -562,6 +577,7 @@ int32_t data_list_delete_evicted( volatile data_table_t * t )
   volatile bool       is_cursor_open = false;
   volatile uint32_t   aging_cnt = 0;
   int32_t     ret = 0;
+  int32_t     print_unit = (int)(MAX_ITEM_CNT/10);
 
   (void)dlist_cursor_open( cursor, t->aging_list, DL_CURSOR_DIR_FORWARD );
   is_cursor_open = true;
@@ -580,11 +596,14 @@ label_aging_again:
 
       /* 데이터 삽입이 있다면 evictor가 동작할 것인데, 
        * aging list에 대한 충돌확률이 높아진다. 이때는 ager가 살짝 쉬어준다. */
-      if( (t->aging_list_count <= 32 ) && (t->data_list_count > 0) )
+      if( (t->aging_list_count <= THRESHOLD_WORKING_SLOW_AGER ) &&
+          (t->data_list_count > 0) )
         {
           lf_dlist_backoff( t->aging_list );
           lf_dlist_backoff( t->aging_list );
+#if 1
           lf_dlist_backoff( t->aging_list );
+#endif
         }
 
       node = dlist_cursor_conv_anode_to_lnode( cursor );
@@ -626,13 +645,12 @@ label_aging_again:
                *     ^                          ^
                *     ----d---- delnode ----d----|
                *  와 같은 생태로 만들어 준다*/
-              for( tmp = cursor->l->head;
-                   tmp != cursor->l->tail ; )
+              for( tmp = cursor->l->head; tmp != cursor->l->tail ; )
                 {
                   tmp = lf_dlist_correct_next( cursor->l,
                                                lf_dlist_dereference_node_pointer(
-                                                                                 cursor->l,
-                                                                                 &tmp ) );
+                                                          cursor->l,
+                                                          &tmp ) );
                   if( tmp == cur_node_next )
                     {
                       break;
@@ -645,18 +663,8 @@ label_aging_again:
       /* wait for resolving conflictions */
       mem_barrier();
 
-#ifdef DEBUG
-      printf(" - evict node - key:%d\n", node->key );
-#else
-      if( node->key % 10000 == 0 ) {
-        printf("[free node:key:%d][data nodes #:%d][aging nodes #:%d]\n",
-               node->key,
-               t->data_list_count,
-               t->aging_list_count );
-      }
-#endif /* DEBUG */
-#if 0
       /* 3. if needed, free contents */
+#if 0
       data_ptr = node->data;
       mem_barrier();
       if( data_ptr != NULL )
@@ -677,6 +685,21 @@ label_aging_again:
       atomic_fetch_inc( &g_total_aging_cnt );
 
       mem_barrier();
+
+#ifdef DEBUG
+      printf("[total aging #:%d][data list #:%d][aging list #:%d]\n",
+             g_total_aging_cnt,
+             t->data_list_count,
+             t->aging_list_count );
+#else
+      // print trace log 10 times
+      if( g_total_aging_cnt % print_unit == 0 ) {
+        printf("[total aging #:%d][data list #:%d][aging list #:%d]\n",
+               g_total_aging_cnt,
+               t->data_list_count,
+               t->aging_list_count );
+      }
+#endif /* DEBUG */
 
 #if 1 // IMPRV_SAFETY
       /* 무조건 한 노드만 aging 한다.
@@ -784,20 +807,34 @@ int32_t main( int32_t argc, char ** argv )
   int32_t     state   = 0;
   int32_t     ret     = RC_FAIL;
   int32_t     i       = 0;
-  int32_t     thr_cnt = 0;
-  int32_t     j       = 0;
   int32_t     tid     = 0;
-  volatile    thr_arg_t targs[THR_NUM_MAX] = {};
+  thr_arg_t * targs = NULL;
 
-  TRY_GOTO( argc < 2, label_print_usage );
+  TRY_GOTO( argc != MAX_ARGC, label_print_usage );
 
+  /* 1. get program options */
   MAX_ITEM_CNT = atoi(argv[1]);
   TRY_GOTO( MAX_ITEM_CNT <= 0, label_print_usage );
 
-  /* 3. create data table */
+#ifndef FIXED_THREADS
+  // count of insert threads
+  THR_NUM_INSERT = atoi( argv[2] );
+  TRY_GOTO( THR_NUM_READ <= 0, label_print_usage );
+
+  // count of read threads
+  THR_NUM_READ = atoi( argv[3] );
+  TRY_GOTO( THR_NUM_READ <= 0, label_print_usage );
+#endif /* FIXED_THREADS */
+
+  /* 2. create data table */
   ret = data_table_init( &tbl );
-  TRY( ret != RC_SUCCESS );
+  TRY_GOTO( ret != RC_SUCCESS, err_create_data_table );
   state = 1;
+
+  /* 3. alloc threads args structure */
+  targs = (thr_arg_t *)calloc( THR_NUM_MAX, sizeof(thr_arg_t) );
+  TRY_GOTO( targs == NULL, err_fail_alloc_thr_args );
+  state = 2;
 
   /* 4. initialize threads */
   do {
@@ -840,8 +877,8 @@ int32_t main( int32_t argc, char ** argv )
 
   /* 5. create & run threads */
   ret = working_threads_create( targs );
-  TRY( ret != RC_SUCCESS );
-  state = 2;
+  TRY_GOTO( ret != RC_SUCCESS, err_fail_create_thread );
+  state = 3;
 
 #if 1
   /* 6. wait for all threads ready */
@@ -850,7 +887,7 @@ int32_t main( int32_t argc, char ** argv )
 #endif
 
   /* 7. join threads */
-  state = 1;
+  state = 2;
   (void)working_threads_join( targs, THR_NUM_MAX );
 
   /* A termination condition of ager thread is that 
@@ -862,7 +899,14 @@ int32_t main( int32_t argc, char ** argv )
   TRY_GOTO( (tbl->data_list_count + tbl->aging_list_count) > 0,
             err_bad_works_on_data_list );
 
-  /* 9. finalize */
+  /* 9. dealloc thr args */
+  /* IMPORTANT: free() is system call, so this code line leads
+   * to performance lack consequently. To overcome, you should declare and use
+   * a data structure un-releated to system call like as memory pool. */
+  (void)free( targs );
+  targs = NULL;
+
+  /* 10. finalize */
   state = 0;
   data_table_finalize( tbl );
 
@@ -875,11 +919,15 @@ int32_t main( int32_t argc, char ** argv )
   CATCH( label_print_usage )
     {
       fprintf( stderr,
-               "Usage: %s <item_cnt>\n"
-               "    item_cnt: init item count and new item count>\n",
+#ifdef FIXED_THREADS
+               "    Usage: %s <item #>\n"
+#else /* FIXED_THREADS */
+               "    Usage: %s <item #> <insert threads #> <read threads #>\n"
+#endif /* FIXED_THREADS */
+               "        <item #>: count of item that would be inserted and read\n",
                basename(argv[0]) );
     }
-  CATCH( err_fail_alloc_data_table )
+  CATCH( err_fail_alloc_thr_args )
     {
       perror(get_error_prefix(esb));
     }
@@ -911,9 +959,9 @@ int32_t main( int32_t argc, char ** argv )
     {
       fprintf( stderr, "fail wait barrier\n" );
     }
-  CATCH( err_create_data_list )
+  CATCH( err_create_data_table )
     {
-      fprintf( stderr, "can not create log list\n" );
+      fprintf( stderr, "can not create data table\n" );
     }
   CATCH( err_fail_create_thread )
     {
@@ -924,11 +972,14 @@ int32_t main( int32_t argc, char ** argv )
 
   switch( state )
     {
-    case 2:
+    case 3:
       (void)working_threads_join( targs, THR_NUM_MAX );
       /* fall through */
+    case 2:
+      (void)free( targs );
+      /* fall through */
     case 1:
-      (void)data_table_finalize(&tbl);
+      (void)data_table_finalize( tbl );
       tbl = NULL;
       /* fall through */
     default:
@@ -941,14 +992,18 @@ int32_t main( int32_t argc, char ** argv )
 int32_t insert_data( data_table_t * tbl )
 {
   data_list_node_t   * node = NULL;;
-  int32_t    ret = RC_SUCCESS;
   int32_t    key = atomic_fetch_inc( &g_next_key );
 
   if( key < MAX_ITEM_CNT ) {
     node = data_table_insert( tbl, key );
     TRY( node == NULL );
 
-    thread_sleep( 0, 1 ); // simulate copy data
+#if 0
+    thread_sleep( 0, 1 ); // simulate that copy & set data on the node
+#else
+    // set some data;
+    // node->data = some data;
+#endif
 
     // complete and then change state to (reference) available
     data_list_node_set_state( node, DLIST_NODE_STATE_AVAIL );
@@ -1056,6 +1111,7 @@ int32_t data_list_search( data_table_t      * t,
                           dlist_cursor_t    * cursor,
                           int32_t             key,
                           data_list_node_t ** _node )
+//                          volatile data_list_node_t ** volatile _node )
 {
   char esb[64];
   volatile data_list_node_t * volatile node;
@@ -1067,7 +1123,7 @@ int32_t data_list_search( data_table_t      * t,
       if( node->key == key )
         {
           node_state = data_list_node_get_state(node);
-          switch( data_list_node_get_state(node) )
+          switch( node_state )
             {
             case DLIST_NODE_STATE_AVAIL:
               /* node can be read */
@@ -1088,7 +1144,7 @@ int32_t data_list_search( data_table_t      * t,
               print_data_list_node( node );
               abort();
 #endif /* DEBUG */
-              TRY( 1 )2;
+              TRY( 1 );
               break;
 
             case DLIST_NODE_STATE_ON_AGING:
@@ -1121,15 +1177,21 @@ label_break_iterate:
   return RC_FAIL;
 }
 
+static void _simulate_do_something( data_table_t * t, data_list_node_t * node )
+{
+  // lf_dlist_backoff( t->list );
+  print_data_list_node( node );             // consume
+}
+
 void * func_read( void * arg )
 {
   char                esb[64];
   int32_t             ret = 0;
-  int32_t             read_cnt = 0;
   int32_t             search_key  = 0;
   thr_arg_t         * targ = (thr_arg_t *)arg;
   data_table_t      * tbl = targ->tbl;
   data_list_node_t  * node = NULL;
+  // data_list_node_t  * volatile node = NULL;
   dlist_cursor_t      cursor[1] = {};
 
   pthread_barrier_wait( g_thr_barrier );
@@ -1159,7 +1221,7 @@ void * func_read( void * arg )
         {
           // success to get item with 'key'
           atomic_fetch_inc( &(node->read_latch) );  // get read lock
-          print_data_list_node( node );             // consume
+          _simulate_do_something( tbl, node );
           atomic_fetch_dec( &(node->read_latch) );  // release read lock
 
           atomic_fetch_inc( &(node->read_cnt) );
@@ -1184,7 +1246,6 @@ void * func_evict( void * arg )
 {
   char            esb[64];
   int32_t         evicted_cnt = 0;
-  int32_t         ret = 0; 
   thr_arg_t     * targ = (thr_arg_t *)arg;
   data_table_t  * tbl = targ->tbl;
 
