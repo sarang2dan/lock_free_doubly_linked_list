@@ -1,5 +1,11 @@
 # Lock-free Doubly Linked List
 
+## ⛔️ WARNING
+- Test on LINUX: it works.
+- Test on MacOS: NOT works.
+  - I just guess MacOS have some problem, not sure.
+  - It may be problem about compiler, atomic function or memory fence.
+- No test on WINDOWS.
 
 ## How to Test
 
