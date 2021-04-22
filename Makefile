@@ -50,7 +50,7 @@ CC=gcc
 LD=gcc
 AR=ar
 
-CFLAGS=-g -Wall -O2
+CFLAGS=-g -O2
 INCLUDES=-I$(SRC_DIR)
 DEFS=
 
@@ -85,7 +85,7 @@ LIB_SRCS = $(SRC_DIR)/lock_free_dlist.c \
 
 LIB_OBJS = $(LIB_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 
-TEST_SRCS = $(SRC_DIR)/test.c
+TEST_SRCS = $(SRC_DIR)/lf_dlist_test.c
 TEST_OBJS = $(TEST_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 TEST_BINS = $(TEST_SRCS:$(SRC_DIR)/%.c=$(BIN_DIR)/%)
 TEST_LDFLAGS = $(LD_LIBS) -llflist -L./lib
@@ -97,8 +97,14 @@ BINS = $(TEST_BINS)
 all: mkdirs
 	$(Q) $(MAKE) build
 
-test: debug $(TEST_OBJS)
+build_test: debug $(TEST_OBJS)
 	$(Q) $(LD) $(TEST_OBJS) -o $(TEST_BINS) $(TEST_LDFLAGS) 
+
+test: build_test
+	$(Q) cd $(BIN_DIR) && $(SHELL) test_suite.sh
+
+test_time: build_test
+	$(Q) cd $(BIN_DIR) && PRINT_ELAPSED_TIME=1 $(SHELL) test_suite.sh
 
 debug: 
 	$(Q) $(MAKE) CFLAGS='$(CFLAGS) -g -O0' build 
