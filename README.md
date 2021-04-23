@@ -61,17 +61,17 @@ print infomation of data table, 10 times
   - aging list #: remaind aging list node count
 
 ```
-ime bin/lf_dlist_test --item-count=5000000 --num-thr-insert=10 --num-thr-read=15 --verbose
-[total aging #:500000][data list #:4216950][aging list #:308]
-[total aging #:1000000][data list #:3971950][aging list #:28050]
-[total aging #:1500000][data list #:3498796][aging list #:1204]
-[total aging #:2000000][data list #:2999960][aging list #:40]
-[total aging #:2500000][data list #:2491006][aging list #:8994]
-[total aging #:3000000][data list #:1999773][aging list #:227]
-[total aging #:3500000][data list #:1498664][aging list #:1336]
-[total aging #:4000000][data list #:995319][aging list #:4681]
-[total aging #:4500000][data list #:499484][aging list #:516]
-[total aging #:5000000][data list #:0][aging list #:0]
+$ time bin/lf_dlist_test --item-count=5000000 --num-thr-insert=10 --num-thr-read=15 --verbose
+[total aged #:500000][data list #:4216950][aging list #:308]
+[total aged #:1000000][data list #:3971950][aging list #:28050]
+[total aged #:1500000][data list #:3498796][aging list #:1204]
+[total aged #:2000000][data list #:2999960][aging list #:40]
+[total aged #:2500000][data list #:2491006][aging list #:8994]
+[total aged #:3000000][data list #:1999773][aging list #:227]
+[total aged #:3500000][data list #:1498664][aging list #:1336]
+[total aged #:4000000][data list #:995319][aging list #:4681]
+[total aged #:4500000][data list #:499484][aging list #:516]
+[total aged #:5000000][data list #:0][aging list #:0]
 
 real	0m16.723s
 user	1m10.555s
