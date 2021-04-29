@@ -88,7 +88,7 @@ LIB_OBJS = $(LIB_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 TEST_SRCS = $(SRC_DIR)/lf_dlist_test.c
 TEST_OBJS = $(TEST_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 TEST_BINS = $(TEST_SRCS:$(SRC_DIR)/%.c=$(BIN_DIR)/%)
-TEST_LDFLAGS = $(LD_LIBS) -llflist -L./lib
+TEST_LDFLAGS = $(LDFLAGS) -lc -lm -lpthread -llflist -L./lib
 
 OBJS = $(LIB_OBJS) $(TEST_OBJS)
 LIBS = $(LIB_DIR)/liblflist.a

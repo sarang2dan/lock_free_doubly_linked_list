@@ -291,7 +291,7 @@ arg_desc_t g_arg_desc[OPT_IDX_MAX + 1] = {
     {OPT_IDX_THR_READ,       'r', "count of read threads"},
     {OPT_IDX_ITEM_COUNT,     'n', "count of item that would be inserted and read"},
     {OPT_IDX_VERBOSE_SIMPLE, 'v', "verbose simpley: print aging status only 10 times"},
-    {OPT_IDX_MAX, ""}
+    {OPT_IDX_MAX, ' ', ""}
 };
 
 int32_t main( int32_t argc, char ** argv )
