@@ -10,8 +10,8 @@
 typedef struct _dlist_node dlist_node_t;
 struct _dlist_node
 {
-  volatile dlist_node_t * volatile prev; /*  8-byte */
-  volatile dlist_node_t * volatile next; /*  8-byte */
+  dlist_node_t * volatile prev; /*  8-byte */
+  dlist_node_t * volatile next; /*  8-byte */
 };
 
 typedef int32_t DL_STATUS;
@@ -52,54 +52,54 @@ enum _dl_status
 typedef struct _lock_free_doubly_linked_list volatile lf_dlist_t;
 struct _lock_free_doubly_linked_list
 {
-  volatile dlist_node_t * volatile head;
-  volatile dlist_node_t * volatile tail;
+  dlist_node_t * volatile head;
+  dlist_node_t * volatile tail;
   /*  A random number generator for back off loop count */
   RNG rng[1];
 };
 
-int32_t lf_dlist_initiaize( volatile lf_dlist_t    * l,
-                            volatile dlist_node_t  * head,
-                            volatile dlist_node_t  * tail,
+int32_t lf_dlist_initiaize( lf_dlist_t    * volatile l,
+                            dlist_node_t  * volatile head,
+                            dlist_node_t  * volatile tail,
                             int32_t backoff_cnt_max );
-void lf_dlist_finalize( volatile lf_dlist_t * l );
+void lf_dlist_finalize( lf_dlist_t * volatile l );
 
 /*  Verify the links between each pair of nodes (including head and tail). */
 /*  For single-threaded cases only, no CC whatsoever. */
-void lf_dlist_single_thread_sanity_check( volatile lf_dlist_t * l );
-void lf_dlist_backoff( volatile lf_dlist_t * l );
+void lf_dlist_single_thread_sanity_check( lf_dlist_t * volatile l );
+void lf_dlist_backoff( lf_dlist_t * volatile l );
 
 
 /*  Insert [node] in front of [next] - [node] might end up before another node */
 /*  in case [prev] is being deleted or due to concurrent insertions at the */
 /*  same spot. */
-DL_STATUS lf_dlist_insert_before( volatile lf_dlist_t * l,
-                                  volatile dlist_node_t * next,
-                                  volatile dlist_node_t * node );
+DL_STATUS lf_dlist_insert_before( lf_dlist_t * volatile l,
+                                  dlist_node_t * volatile next,
+                                  dlist_node_t * volatile node );
 
 /*  Similar to insert_before, but try to insert [node] after [prev]. */
-DL_STATUS lf_dlist_insert_after( volatile lf_dlist_t * l,
-                                 volatile dlist_node_t * prev,
-                                 volatile dlist_node_t * node );
+DL_STATUS lf_dlist_insert_after( lf_dlist_t * volatile l,
+                                 dlist_node_t * volatile prev,
+                                 dlist_node_t * volatile node );
 
-DL_STATUS lf_dlist_delete( volatile lf_dlist_t * l, volatile dlist_node_t * node );
-dlist_node_t * lf_dlist_get_next( volatile lf_dlist_t * l, volatile dlist_node_t * node );
-dlist_node_t * lf_dlist_get_prev( volatile lf_dlist_t * l, volatile dlist_node_t * node );
+DL_STATUS lf_dlist_delete( lf_dlist_t * volatile l, dlist_node_t * volatile node );
+dlist_node_t * lf_dlist_get_next( lf_dlist_t * volatile l, dlist_node_t * volatile node );
+dlist_node_t * lf_dlist_get_prev( lf_dlist_t * volatile l, dlist_node_t * volatile node );
 
-dlist_node_t * lf_dlist_correct_next( volatile lf_dlist_t * l, volatile dlist_node_t * node );
+dlist_node_t * lf_dlist_correct_next( lf_dlist_t * volatile l, dlist_node_t * volatile node );
 
 /*  Set the deleted bit on the given node */
-void lf_dlist_mark_node_pointer( volatile lf_dlist_t * l, volatile dlist_node_t ** node );
+void lf_dlist_mark_node_pointer( lf_dlist_t * volatile l, dlist_node_t ** volatile node );
 
 /*  Extract the real underlying node (masking out the MSB and flush if needed) */
 /* Do NOT use this macro function, if PMEM mode. */
 #define lf_dlist_dereference_node_pointer_mem_only( _node ) \
-  (dlist_node_t *)((uint64_t)(_node) & DL_NODE_DELETED_MASK)
+  (dlist_node_t * volatile)((uint64_t)(_node) & DL_NODE_DELETED_MASK)
 
-dlist_node_t * lf_dlist_dereference_node_pointer( lf_dlist_t             * l,
-                                                  volatile dlist_node_t ** node );
-bool lf_dlist_marked_next( volatile dlist_node_t * node );
-bool lf_dlist_marked_prev( volatile dlist_node_t * node );
+dlist_node_t * lf_dlist_dereference_node_pointer( lf_dlist_t    * volatile l,
+                                                  dlist_node_t ** volatile node );
+bool lf_dlist_marked_next( dlist_node_t * volatile node );
+bool lf_dlist_marked_prev( dlist_node_t * volatile node );
 
 /******************************************************************************
  * dlist_cursor_t */
@@ -114,10 +114,10 @@ enum _dlist_cursor_move_direction
 typedef struct _dlist_cursor dlist_cursor_t;
 struct _dlist_cursor
 {
-  volatile lf_dlist_t   * volatile l;
-  volatile dlist_node_t * volatile cur_node;
-  volatile dlist_node_t * volatile head;
-  volatile dlist_node_t * volatile tail;
+  lf_dlist_t   * volatile l;
+  dlist_node_t * volatile cur_node;
+  dlist_node_t * volatile head;
+  dlist_node_t * volatile tail;
   dlist_cursor_dir_t dir;
 };
 
