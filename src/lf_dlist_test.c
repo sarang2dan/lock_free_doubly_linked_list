@@ -14,8 +14,9 @@
 
 // #define DEBUG 1
 
-#define THRESHOLD_WORKING_SLOW_EVICTOR  32
-#define THRESHOLD_WORKING_SLOW_AGER     32
+#define THRESHOLD_WORKING_SLOW_READING  64
+#define THRESHOLD_WORKING_SLOW_EVICTOR  64
+#define THRESHOLD_WORKING_SLOW_AGER     64
 
 #define MIN_ARGC   4
 int32_t THR_NUM_INSERT        = 1;
@@ -75,22 +76,22 @@ char * make_error_prefix( char        * buf,
 #define _MKSTR( _arg ) #_arg
 #define MKSTR( _arg ) _MKSTR( _arg )
 
-#ifdef DEBUG
-#define print_data_list_node( _n )    \
+#define _print_data_list_node( _n )    \
   do {                                                                  \
     data_list_node_t * _node = (data_list_node_t *)(_n);                \
     if( _node ) {                                                       \
-      fprintf( stdout,                                                  \
-               "%s():%d : [n:%p] [prev: %16p] [next: %16p]"                 \
-               " [ag_prev: %16p] [ag_next: %16p] "                          \
-               " [key:%d] [state:%s]\n",                                 \
+      fprintf( stderr,                                                  \
+               "%s():%d :[key:%d] [rd#:%d] [n:%p] [prev: %p] [next: %p]"                 \
+               " [ag_prev: %p] [ag_next: %p] "                          \
+               " [key:%d] [state:%s]\n",                                \
                __func__, __LINE__,                                      \
+               (_node)->key,                                            \
+               (_node)->read_cnt,                                            \
                (_node),                                                 \
                (_node)->prev,                                           \
                (_node)->next,                                           \
                (_node)->ag_prev,                                        \
                (_node)->ag_next,                                        \
-               (_node)->key,                                            \
                g_state_str[(_node)->state] );                           \
     } else {                                                            \
       fprintf( stderr,                                                  \
@@ -98,8 +99,12 @@ char * make_error_prefix( char        * buf,
                __func__, __LINE__ );                                    \
     }                                                                   \
   } while ( 0 )
+#ifdef DEBUG
+#define print_data_list_node _print_data_list_node
+#define  print_data_list_node_4_dump( _node )  _print_data_list_node( _node )
 #else
 #define print_data_list_node( _node )
+#define  print_data_list_node_4_dump  _print_data_list_node
 #endif
 
 typedef enum _dlist_node_state dlist_node_state_t;
@@ -133,7 +138,8 @@ char g_state_str[DLIST_NODE_STATE_MAX+1][16] =
   volatile  int32_t            read_latch;      \
   volatile  dlist_node_state_t state
 
-typedef struct _aging_list_node aging_list_node_t;
+typedef volatile struct _aging_list_node _aging_list_node_t;
+#define aging_list_node_t volatile _aging_list_node_t
 struct _aging_list_node
 {
   volatile aging_list_node_t   * volatile ag_prev;  // for aging list
@@ -141,8 +147,10 @@ struct _aging_list_node
   DATA_LIST_NODE_DEFINE_MEMBER_VARS;
 };
 
-typedef struct _data_list_node   data_list_node_t;
-typedef data_list_node_t         data_list_t;
+typedef volatile struct _data_list_node   _data_list_node_t;
+typedef _data_list_node_t  _data_list_t;
+#define data_list_node_t volatile  _data_list_node_t
+#define data_list_t      volatile  _data_list_t
 struct _data_list_node
 {
   volatile data_list_node_t   * volatile prev;
@@ -157,10 +165,10 @@ bool data_list_node_is_read_latched( data_list_node_t * node )
   return (node->read_latch != 0) ? true : false;
 }
 
-typedef struct _data_table data_table_t;
+typedef volatile struct _data_table data_table_t;
 struct _data_table
 {
-  volatile lf_dlist_t     list[1];       // entry pointer of log list
+  volatile lf_dlist_t     list[1];       // entry pointer of list
   volatile lf_dlist_t     aging_list[1]; // entry pointer of aging list
 
   volatile data_list_node_t    lhead[1];     // list head
@@ -190,7 +198,7 @@ struct _data_table
 #define dlist_cursor_get_list_node( _cursor ) \
   ((data_list_node_t *)((_cursor)->cur_node))
 
-#define DLIST_DEFAULT_MAX_BACKOFF_LOG_LIST   700
+#define DLIST_DEFAULT_MAX_BACKOFF_LIST   700
 #define DLIST_DEFAULT_MAX_BACKOFF_AGING_LIST 1000
 
 #define dlist_is_empty( _l ) \
@@ -244,7 +252,7 @@ int32_t data_list_evict( volatile data_table_t * t );
 
 uint64_t data_list_get_total_aging_cnt( void );
 int32_t data_list_delete_evicted( volatile data_table_t * t );
-void dump_list( void * l );
+void dump_list( lf_dlist_t * volatile list );
 int32_t working_threads_create( thr_arg_t * targs );
 int32_t working_threads_join( thr_arg_t * volatile targs, int32_t thr_cnt );
 
@@ -294,6 +302,13 @@ arg_desc_t g_arg_desc[OPT_IDX_MAX + 1] = {
     {OPT_IDX_MAX, ' ', ""}
 };
 
+#include <signal.h>
+
+pthread_mutex_t g_mtx[1];
+
+void sig_dump_list( int sig );
+data_table_t * volatile g_tbl = NULL;
+
 int32_t main( int32_t argc, char ** argv )
 {
   char esb[512];
@@ -306,6 +321,8 @@ int32_t main( int32_t argc, char ** argv )
   int32_t     i       = 0;
   int32_t     tid     = 0;
   thr_arg_t * targs = NULL;
+
+  pthread_mutex_init( g_mtx, NULL );
 
   TRY_GOTO( argc < MIN_ARGC, label_print_usage );
 
@@ -370,6 +387,9 @@ int32_t main( int32_t argc, char ** argv )
   ret = data_table_init( &tbl );
   TRY_GOTO( ret != RC_SUCCESS, err_create_data_table );
   state = 1;
+
+  g_tbl = tbl;
+  signal( SIGUSR1, sig_dump_list );
 
   /* 3. alloc threads args structure */
   targs = (thr_arg_t *)calloc( THR_NUM_MAX, sizeof(thr_arg_t) );
@@ -555,23 +575,26 @@ int32_t main( int32_t argc, char ** argv )
 
 int32_t insert_data( data_table_t * tbl )
 {
-  data_list_node_t   * node = NULL;;
-  int32_t    key = atomic_fetch_inc( &g_next_key );
+  data_list_node_t   * volatile node = NULL;;
+  int32_t    key = 0; // atomic_fetch_inc( &g_next_key );
 
+  // pthread_mutex_lock( g_mtx );
+  key = atomic_fetch_inc( &g_next_key );
   if( key < MAX_ITEM_CNT ) {
     node = data_table_insert( tbl, key );
     TRY( node == NULL );
 
-#if 0
-    thread_sleep( 0, 1 ); // simulate that copy & set data on the node
-#else
+#if 1
     // set some data;
     // node->data = some data;
+    // thread_sleep( 0, 1 ); // simulate that copy & set data on the node    
+    lf_dlist_backoff( tbl->list );
 #endif
 
     // complete and then change state to (reference) available
     data_list_node_set_state( node, DLIST_NODE_STATE_AVAIL );
   }
+  // pthread_mutex_unlock( g_mtx );
 
   return RC_SUCCESS;
 
@@ -581,7 +604,7 @@ int32_t insert_data( data_table_t * tbl )
 }
 
 /*******************************************************
- * log list 구조 및 오퍼레이션이 일어나는 위치
+ * list 구조 및 오퍼레이션이 일어나는 위치
  *
  *            (evict)             (insert)
  * +-> HEAD <--> N1 <--> N2 <--> Ni <--> TAIL <-+
@@ -640,7 +663,7 @@ void * func_insert( void * arg )
   char           esb[64];
   int32_t        ret = 0;
   thr_arg_t    * targ = (thr_arg_t *)arg;
-  data_table_t * tbl = targ->tbl;
+  data_table_t * volatile tbl = targ->tbl;
 
   ret = pthread_barrier_wait( g_thr_barrier );
   TRY_GOTO( errno != 0, err_wait_barrier );
@@ -656,7 +679,7 @@ void * func_insert( void * arg )
       if( ret != 0 )
         {
           fprintf(stderr, "alloc fail!\n" );
-          exit( 0 );
+          exit( 1 );
         }
     }
 
@@ -671,18 +694,27 @@ void * func_insert( void * arg )
   return NULL;
 }
 
-int32_t data_list_search( data_table_t      * t,
-                          dlist_cursor_t    * cursor,
-                          int32_t             key,
-                          data_list_node_t ** _node )
+int32_t data_table_search( data_table_t      * volatile t,
+                           dlist_cursor_t     * volatile cursor,
+                           int32_t             key,
+                           data_list_node_t ** volatile _node )
 {
   char esb[64];
   volatile data_list_node_t * volatile node;
-  int32_t node_state = 0;
+  volatile int32_t node_state = 0;
+  volatile int32_t _key;
+  volatile int32_t upper_key_range;
+  bool is_locked = false;
 
   DLIST_ITERATE( cursor )
     {
+      mem_barrier();
       node = dlist_cursor_get_list_node( cursor );
+      atomic_fetch_inc( &(node->read_latch) );  // get read lock
+      is_locked = true;
+
+      _key = node->key;
+
       if( node->key == key )
         {
           node_state = data_list_node_get_state(node);
@@ -724,8 +756,17 @@ int32_t data_list_search( data_table_t      * t,
           goto label_break_iterate;
         }
 
-      if( node->key > key + 300 )
+      is_locked = false; 
+      atomic_fetch_dec( &(node->read_latch) );  // release read lock
+
+      upper_key_range = ((int32_t)(t->data_list_count) < 128 ) ?
+        (int32_t)(t->data_list_count - 1) : 128;
+
+      mem_barrier();
+
+      if( node->key > key + upper_key_range )
         {
+          // fprintf(stderr, "nk:%d sk:%d sk+u:%d\n",  (int32_t)(node->key), (int32_t)key, (int32_t)(key + upper_key_range) );
           *_node = NULL;
           goto label_break_iterate;
         }
@@ -733,27 +774,37 @@ int32_t data_list_search( data_table_t      * t,
 
 label_break_iterate:
 
+  if( is_locked == true )
+    {
+      atomic_fetch_dec( &(node->read_latch) );  // release read lock
+    }
+
   return RC_SUCCESS;
 
   CATCH_END;
 
+  if( is_locked == true )
+    {
+      atomic_fetch_dec( &(node->read_latch) );  // release read lock
+    }
+
   return RC_FAIL;
 }
 
-static void _simulate_do_something( data_table_t * t, data_list_node_t * node )
+static void _simulate_do_something( data_table_t * volatile t, data_list_node_t * node )
 {
   // lf_dlist_backoff( t->list );
   print_data_list_node( node );             // consume
 }
-
 void * func_read( void * arg )
 {
   char                esb[64];
   int32_t             ret = 0;
-  int32_t             search_key  = 0;
+  volatile int32_t    search_key  = 0;
+  int32_t             break_cnt = 0;
   thr_arg_t         * targ = (thr_arg_t *)arg;
-  data_table_t      * tbl = targ->tbl;
-  data_list_node_t  * node = NULL;
+  data_table_t      * volatile tbl = targ->tbl;
+  data_list_node_t  * volatile node = NULL;
   // data_list_node_t  * volatile node = NULL;
   dlist_cursor_t      cursor[1] = {};
 
@@ -771,17 +822,32 @@ void * func_read( void * arg )
 
       node = NULL;
 
-      ret = data_list_search( tbl, cursor, search_key, &node );
+      if( tbl->data_list_count == 0 )
+        {
+          thread_sleep( 0, 10 );
+          continue;
+        }
+
+      ret = data_table_search( tbl, cursor, search_key, &node );
       TRY( ret == RC_FAIL );
 
       if( node == NULL )
         {
+#if 0
+          asm volatile ("wbinvd" ::: "memory");
+          if( break_cnt++ == 100 ) {
+            abort();
+            asm volatile ( "WBINVD" );
+          }
+#endif
           // there is no item to read
           dlist_cursor_reset( cursor );
+          lf_dlist_backoff( tbl->list );
           continue;
         }
       else
         {
+          break_cnt = 0;
           // success to get item with 'key'
           atomic_fetch_inc( &(node->read_latch) );  // get read lock
           _simulate_do_something( tbl, node );
@@ -810,7 +876,7 @@ void * func_evict( void * arg )
   char            esb[64];
   int32_t         evicted_cnt = 0;
   thr_arg_t     * targ = (thr_arg_t *)arg;
-  data_table_t  * tbl = targ->tbl;
+  data_table_t  * volatile tbl = targ->tbl;
 
   pthread_barrier_wait( g_thr_barrier );
   TRY_GOTO( errno != 0, err_wait_barrier );
@@ -825,7 +891,7 @@ void * func_evict( void * arg )
 
       if( evicted_cnt == 0 )
         {
-          thread_sleep( 0, 10 );
+          thread_sleep( 0, 1 );
         }
     }
 
@@ -862,6 +928,9 @@ void * func_aging( void * arg )
               g_exit_flag = true;
               break;
             }
+
+          if( tbl->data_list_count == 0 )
+            thread_sleep( 0, 10 );
         }
     }
 
@@ -890,7 +959,7 @@ int32_t data_table_init( data_table_t ** _t )
   lf_dlist_initiaize( t->list,
                       (dlist_node_t *)t->lhead,
                       (dlist_node_t *)t->ltail,
-                      DLIST_DEFAULT_MAX_BACKOFF_LOG_LIST );
+                      DLIST_DEFAULT_MAX_BACKOFF_LIST );
 
   // aging list init
   lf_dlist_initiaize( t->aging_list, 
@@ -946,10 +1015,9 @@ data_list_node_t * data_table_insert( data_table_t * volatile t, int32_t key )
   new_node->key = key;
 
 label_insert_again:
+  mem_barrier();
   TRY( dlist_cursor_open( cursor, t->list, DL_CURSOR_DIR_BACKWARD ) != RC_SUCCESS );
   is_cursor_open = true;
-
-  mem_barrier();
 
   for( dlist_cursor_prev( cursor ) ;
        cursor->cur_node != NULL ;
@@ -966,16 +1034,21 @@ label_insert_again:
           cmp_ret = 1;
         }
 
-      if( cmp_ret > 0 )
+      if( cmp_ret == 1 )
         {
           st = lf_dlist_insert_after( t->list,
                                       (dlist_node_t *)node,
                                       (dlist_node_t *)new_node );
-
           TRY_GOTO( st != DL_STATUS_OK, label_insert_again );
 
           is_inserted = true;
           break;
+        }
+
+      if( cmp_ret > 1 )
+        {
+          thread_sleep( 0, 1 );
+          goto label_insert_again;
         }
     }
 
@@ -1034,145 +1107,153 @@ int32_t data_list_evict( volatile data_table_t * t )
   is_cursor_open = true;
 
 label_try_again:
-  (void)dlist_cursor_reset( cursor );
-
   mem_barrier();
-
-  DLIST_ITERATE( cursor )
+  if( t->data_list_count > 0 )
     {
-      if( g_exit_flag == true )
+      (void)dlist_cursor_reset( cursor );
+
+      DLIST_ITERATE( cursor )
         {
-          break;
-        }
-
-      node = dlist_cursor_get_list_node( cursor );
-
-      if( node->state < DLIST_NODE_STATE_NEED_EVICT )
-        {
-          /* evictor는 퇴거대상인지 검사한 후 '상태 변경' 및 퇴거한다 */
-          is_need_evict = data_list_check_need_evict( node->read_cnt, THR_NUM_READ );
-          if( is_need_evict == true )
+          if( g_exit_flag == true )
             {
-              do {
-                ret = data_list_node_set_state( node, DLIST_NODE_STATE_NEED_EVICT );
-              } while( ret != RC_SUCCESS );
-              /* continue to evict */
-            }
-          else
-            {
-              /* 무조건 첫 노드만 에이징한다.
-               * node가 free되었으므로, 이 노드를 액세스하는 것은,
-               * 쓰레기 값을 읽는 것이다. 다른 트랜잭션이 동일 주소의 노드를
-               * 할당받아 다른 값을 기록할 수도 있다. 따라서 free된 노드의 next를
-               * 참조하면 꼬이는 수가 있다. */
-              goto label_try_again;
-            }
-        }
-
-#ifdef DEBUG
-      printf(" - evict node - key:%d\n", node->key );
-#endif /* DEBUG */
-
-      /* EVICT를 수행하는 블럭! */
-        {
-          /* node->state == DLIST_NODE_STATE_NEED_EVICT */
-          while( true )
-            {
-              cur_node_next = cursor->cur_node->next;
-
-              if( DL_STATUS_OK == lf_dlist_delete( cursor->l, cursor->cur_node ) )
-                {
-                  /* IMPORTANT:
-                   * 아래 함수 호출 이전까지 아래와 같은 상황이다.
-                   * node1    <-------------------  node2
-                   *   |  \-----d---|                 ^
-                   *   ---------->  delnode -----d----|
-                   *
-                   *   따라서 아래함수를 호출하여 
-                   * node1  <----------------->   node2
-                   *     ^                          ^
-                   *     ----d---- delnode ----d----|
-                   *  와 같은 생태로 만들어 준다*/
-                  for( tmp = cursor->l->head; tmp != cursor->l->tail ; )
-                    {
-                      tmp = lf_dlist_correct_next( cursor->l,
-                              lf_dlist_dereference_node_pointer( cursor->l, &tmp ) );
-                      if( tmp == cur_node_next )
-                        {
-                          break;
-                        }
-                    }
-
-                  /* 트랜잭션 유입이 있다면 evictor가 동작할 것이다.
-                   * 이때, list에 리스트 노드가 적을 수록, 
-                   * insert 스레드와 evictor가 서로 충돌하여 역전될 확률이 높아진다. 
-                   * 이를 방지하기 위해 데이터 리스트의 개수가 적고, 수행되는
-                   * 트랜잭션이 있다면, evictor가 느리게 동작해야 한다. */
-                  if( t->data_list_count <= THRESHOLD_WORKING_SLOW_EVICTOR ) /* && insert threads are doing some operations. */
-                    {
-                      lf_dlist_backoff( t->aging_list );
-                      lf_dlist_backoff( t->aging_list );
-                    }
-
-                  break;
-                }
+              break;
             }
 
-          while( true )
+          node = dlist_cursor_get_list_node( cursor );
+
+          if( node->state < DLIST_NODE_STATE_NEED_EVICT )
             {
-              if( data_list_node_is_read_latched( node ) != true )
-                {
-                  break;
-                }
-
-              lf_dlist_backoff( t->aging_list );
-            }
-
-          /* NOTE:
-           * 이후에 이 삭제할 노드로 들어올 수 있는 링크는 없어야 한다.
-           * 만일, tb_f_malloc()  함수에서 DL_NODE_DELETED 비트로 새겨진
-           * 링크를 액세스하다가 죽는 문제가 발생하면, backoff 시간이
-           * 짧아서 생기는 문제다. */
-          mem_barrier();
-
-          while( true )
-            {
-              DL_STATUS st = DL_STATUS_OK;
-
-              st = lf_dlist_insert_before( t->aging_list, 
-                                           (dlist_node_t *)(t->aging_list->tail), 
-                                           dlist_cursor_conv_lnode_to_anode( cursor ) );
-              if( st == DL_STATUS_OK )
+              /* evictor는 퇴거대상인지 검사한 후 '상태 변경' 및 퇴거한다 */
+              is_need_evict = data_list_check_need_evict( node->read_cnt, THR_NUM_READ );
+              if( is_need_evict == true )
                 {
                   do {
-                    ret = data_list_node_set_state( node, DLIST_NODE_STATE_EVICTED );
+                    ret = data_list_node_set_state( node, DLIST_NODE_STATE_NEED_EVICT );
                   } while( ret != RC_SUCCESS );
-
-                  atomic_fetch_dec( &(t->data_list_count) );
-                  atomic_fetch_inc( &(t->aging_list_count) );
-                  break;
+                  /* continue to evict */
                 }
               else
                 {
-                  /* ager와 충돌이 났을 것이다. 
-                   * 백오프하여 삽입 시점을 조정한다 */
-                  lf_dlist_backoff( t->aging_list );
-                  lf_dlist_backoff( t->aging_list );
+                  /* 무조건 첫 노드만 에이징한다.
+                   * node가 free되었으므로, 이 노드를 액세스하는 것은,
+                   * 쓰레기 값을 읽는 것이다. 다른 트랜잭션이 동일 주소의 노드를
+                   * 할당받아 다른 값을 기록할 수도 있다. 따라서 free된 노드의 next를
+                   * 참조하면 꼬이는 수가 있다. */
+                  goto label_try_again;
                 }
             }
 
-          evict_cnt++;
+#ifdef DEBUG
+          printf(" - evict node - key:%d\n", node->key );
+#endif /* DEBUG */
+
+          /* EVICT를 수행하는 블럭! */
+            {
+              /* node->state == DLIST_NODE_STATE_NEED_EVICT */
+              while( true )
+                {
+                  cur_node_next = cursor->cur_node->next;
+
+                  if( DL_STATUS_OK == lf_dlist_delete( cursor->l, cursor->cur_node ) )
+                    {
+                      /* IMPORTANT:
+                       * 아래 함수 호출 이전까지 아래와 같은 상황이다.
+                       * node1    <-------------------  node2
+                       *   |  \-----d---|                 ^
+                       *   ---------->  delnode -----d----|
+                       *
+                       *   따라서 아래함수를 호출하여 
+                       * node1  <----------------->   node2
+                       *     ^                          ^
+                       *     ----d---- delnode ----d----|
+                       *  와 같은 생태로 만들어 준다*/
+                      for( tmp = cur_node_next; tmp != cursor->l->head ; )
+                        {
+                          tmp = lf_dlist_get_prev( cursor->l, tmp );
+                        }
+
+                      /* 트랜잭션 유입이 있다면 evictor가 동작할 것이다.
+                       * 이때, list에 리스트 노드가 적을 수록, 
+                       * insert 스레드와 evictor가 서로 충돌하여 역전될 확률이 높아진다. 
+                       * 이를 방지하기 위해 데이터 리스트의 개수가 적고, 수행되는
+                       * 트랜잭션이 있다면, evictor가 느리게 동작해야 한다. */
+                      if( t->data_list_count <= THRESHOLD_WORKING_SLOW_EVICTOR ) /* && insert threads are doing some operations. */
+                        {
+                          lf_dlist_backoff( t->aging_list );
+                          lf_dlist_backoff( t->aging_list );
+                          lf_dlist_backoff( t->aging_list );
+                          lf_dlist_backoff( t->aging_list );
+                          // thread_sleep( 0 , 1 );
+                        }
+
+                      break;
+                    }
+                }
+
+              while( true )
+                {
+                  if( data_list_node_is_read_latched( node ) != true )
+                    {
+                      break;
+                    }
+
+                  lf_dlist_backoff( t->aging_list );
+                }
+
+              /* NOTE:
+               * 이후에 이 삭제할 노드로 들어올 수 있는 링크는 없어야 한다.
+               * 만일, tb_f_malloc()  함수에서 DL_NODE_DELETED 비트로 새겨진
+               * 링크를 액세스하다가 죽는 문제가 발생하면, backoff 시간이
+               * 짧아서 생기는 문제다. */
+              mem_barrier();
+
+              while( true )
+                {
+                  DL_STATUS st = DL_STATUS_OK;
+
+                  if( t->data_list_count < 3 ) /* && insert threads are doing some operations. */
+                    {
+                      lf_dlist_backoff( t->aging_list );
+                      lf_dlist_backoff( t->aging_list );
+                    }
+
+                  st = lf_dlist_insert_before( t->aging_list, 
+                                               (dlist_node_t *)(t->aging_list->tail), 
+                                               dlist_cursor_conv_lnode_to_anode( cursor ) );
+                  if( st == DL_STATUS_OK )
+                    {
+                      do {
+                        ret = data_list_node_set_state( node, DLIST_NODE_STATE_EVICTED );
+                      } while( ret != RC_SUCCESS );
+
+                      atomic_fetch_dec( &(t->data_list_count) );
+                      atomic_fetch_inc( &(t->aging_list_count) );
+                      break;
+                    }
+                  else
+                    {
+                      /* ager와 충돌이 났을 것이다. 
+                       * 백오프하여 삽입 시점을 조정한다 */
+                      lf_dlist_backoff( t->aging_list );
+                      lf_dlist_backoff( t->aging_list );
+                      thread_sleep( 0 , 1 );
+                    }
+                }
+
+              evict_cnt++;
 
 #if 1 // IMPRV_SAFETY
-          /* 무조건 첫 노드만 에이징한다. 
-           * node가 free되었으므로, 이 노드를 액세스하는 것은, 
-           * 쓰레기 값을 읽는 것이다. 다른 트랜잭션이 동일 주소의 노드를
-           * 할당받아 다른 값을 기록할 수도 있다. 따라서 free된 노드의 next를
-           * 참조하면 꼬이는 수가 있다. */
-          goto label_try_again;
+              /* 무조건 첫 노드만 에이징한다. 
+               * node가 free되었으므로, 이 노드를 액세스하는 것은, 
+               * 쓰레기 값을 읽는 것이다. 다른 트랜잭션이 동일 주소의 노드를
+               * 할당받아 다른 값을 기록할 수도 있다. 따라서 free된 노드의 next를
+               * 참조하면 꼬이는 수가 있다. */
+              // goto label_try_again;
+              break;
 #endif // IMPRV_SAFETY
-        } /* if node->status */
-    } /* DLIST_ITERATE */
+            } /* if node->status */
+        } /* DLIST_ITERATE */
+    }
 
   is_cursor_open = false;
   dlist_cursor_close( cursor );
@@ -1209,135 +1290,139 @@ int32_t data_list_delete_evicted( volatile data_table_t * t )
   is_cursor_open = true;
 
 label_aging_again:
-  (void)dlist_cursor_reset( cursor );
-
   mem_barrier();
-
-  DLIST_ITERATE( cursor )
+  if( t->aging_list_count > 0 )
     {
-      if( g_exit_flag == true )
-        {
-          break;
-        }
+      (void)dlist_cursor_reset( cursor );
 
-      /* 데이터 삽입이 있다면 evictor가 동작할 것인데, 
-       * aging list에 대한 충돌확률이 높아진다. 이때는 ager가 살짝 쉬어준다. */
-      if( (t->aging_list_count <= THRESHOLD_WORKING_SLOW_AGER ) &&
-          (t->data_list_count > 0) )
+      DLIST_ITERATE( cursor )
         {
-          lf_dlist_backoff( t->aging_list );
-          lf_dlist_backoff( t->aging_list );
-#if 1
-          lf_dlist_backoff( t->aging_list );
-#endif
-        }
-
-      node = dlist_cursor_conv_anode_to_lnode( cursor );
-      mem_barrier();
-      TRY_GOTO( node->state < DLIST_NODE_STATE_EVICTED, label_aging_again ); 
-
-      /* 아래 코드는 multi-ager를 염두해둔 코드다.
-       * 2개이상의 ager가 동작할 때는 이 코드가 유용할 것. 
-       * 즉, 현재 노드는 다른 에이징 스레드가 aging 하는 중이니 다음 노드를
-       * 시도한다. */
-      ret = data_list_node_set_state( node, DLIST_NODE_STATE_ON_AGING );
-      if( ret != RC_SUCCESS )
-        {
-          continue;
-        }
-
-      while( true )
-        {
-          if( data_list_node_is_read_latched( node ) != true )
+          if( g_exit_flag == true )
             {
               break;
             }
-        }
 
-      while( true )
-        {
-          cur_node_next = cursor->cur_node->next;
-
-          if( DL_STATUS_OK == lf_dlist_delete( cursor->l, cursor->cur_node ) )
+          if( t->data_list_count > 0 &&  t->aging_list_count < THRESHOLD_WORKING_SLOW_AGER )
             {
-              /* IMPORTANT:
-               * 아래 함수 호출 이전까지 아래와 같은 상황이다.
-               * node1    <-------------------  node2
-               *     |<-----d---|                 ^
-               *     -------->  delnode -----d----|
-               *
-               *   따라서 아래함수를 호출하여 
-               * node1  <----------------->   node2
-               *     ^                          ^
-               *     ----d---- delnode ----d----|
-               *  와 같은 생태로 만들어 준다*/
-              for( tmp = cursor->l->head; tmp != cursor->l->tail ; )
+              break;
+            }
+
+          node = dlist_cursor_conv_anode_to_lnode( cursor );
+          mem_barrier();
+          TRY_GOTO( node->state < DLIST_NODE_STATE_EVICTED, label_aging_again ); 
+
+          /* 아래 코드는 multi-ager를 염두해둔 코드다.
+           * 2개이상의 ager가 동작할 때는 이 코드가 유용할 것. 
+           * 즉, 현재 노드는 다른 에이징 스레드가 aging 하는 중이니 다음 노드를
+           * 시도한다. */
+          ret = data_list_node_set_state( node, DLIST_NODE_STATE_ON_AGING );
+          if( ret != RC_SUCCESS )
+            {
+              continue;
+            }
+
+          while( true )
+            {
+              if( data_list_node_is_read_latched( node ) != true )
                 {
-                  tmp = lf_dlist_correct_next( cursor->l,
-                                               lf_dlist_dereference_node_pointer(
-                                                          cursor->l,
-                                                          &tmp ) );
-                  if( tmp == cur_node_next )
+                  break;
+                }
+            }
+
+          while( true )
+            {
+              cur_node_next = cursor->cur_node->next;
+
+              /* 데이터 삽입이 있다면 evictor가 동작할 것인데, 
+               * aging list에 대한 충돌확률이 높아진다. 이때는 ager가 살짝 쉬어준다. */
+              if( (t->aging_list_count <= THRESHOLD_WORKING_SLOW_AGER ) &&
+                  (t->data_list_count == 1) )
+                {
+                  lf_dlist_backoff( t->aging_list );
+                  lf_dlist_backoff( t->aging_list );
+                  lf_dlist_backoff( t->aging_list );
+                }
+
+
+              if( DL_STATUS_OK == lf_dlist_delete( cursor->l, cursor->cur_node ) )
+                {
+                  /* IMPORTANT:
+                   * 아래 함수 호출 이전까지 아래와 같은 상황이다.
+                   * node1    <-------------------  node2
+                   *     |<-----d---|                 ^
+                   *     -------->  delnode -----d----|
+                   *
+                   *   따라서 아래함수를 호출하여 
+                   * node1  <----------------->   node2
+                   *     ^                          ^
+                   *     ----d---- delnode ----d----|
+                   *  와 같은 생태로 만들어 준다*/
+                  for( tmp = cur_node_next; tmp != cursor->l->head ; )
                     {
-                      break;
+                      tmp = lf_dlist_get_prev( cursor->l, tmp );
+                    }
+                  break;
+
+                  if( (t->aging_list_count <= THRESHOLD_WORKING_SLOW_AGER ) &&
+                      (t->data_list_count == 1) )
+                    {
+                      lf_dlist_backoff( t->aging_list );
+                      lf_dlist_backoff( t->aging_list );
+                      lf_dlist_backoff( t->aging_list );
                     }
                 }
-              break;
             }
-        }
 
-      /* wait for resolving conflictions */
-      mem_barrier();
+          /* wait for resolving conflictions */
+          mem_barrier();
 
-      /* 3. if needed, free contents */
+          /* 3. if needed, free contents */
 #if 0
-      data_ptr = node->data;
-      mem_barrier();
-      if( data_ptr != NULL )
-        {
-          free( data_ptr );
-          node->data = NULL;
-        }
+          data_ptr = node->data;
+          mem_barrier();
+          if( data_ptr != NULL )
+            {
+              free( data_ptr );
+              node->data = NULL;
+            }
 #endif
 
-      /* 4. free table entry */
-      free( node );
-      node = NULL;
+          /* 4. free table entry */
+          free( node );
+          node = NULL;
 
-      mem_barrier();
-      atomic_fetch_dec( &(t->aging_list_count) );
+          atomic_fetch_dec( &(t->aging_list_count) );
+          atomic_fetch_inc( &g_total_aged_node_cnt );
 
-      aging_cnt++;
-      atomic_fetch_inc( &g_total_aged_node_cnt );
-
-      mem_barrier();
+          aging_cnt++;
 
 #ifdef DEBUG
-      printf("[total aging #:%d][data list #:%d][aging list #:%d]\n",
-             g_total_aged_node_cnt,
-             t->data_list_count,
-             t->aging_list_count );
+          printf("[total aging #:%d][data list #:%d][aging list #:%d]\n",
+                 g_total_aged_node_cnt,
+                 t->data_list_count,
+                 t->aging_list_count );
 #else
-      // print trace log 10 times
-      if( g_is_verbose_short == true )
-        {
-          if( g_total_aged_node_cnt % print_unit == 0 ) {
-            printf("[total aging #:%d][data list #:%d][aging list #:%d]\n",
-                   g_total_aged_node_cnt,
-                   t->data_list_count,
-                   t->aging_list_count );
-          }
-        }
+          // print trace log 10 times
+          if( g_is_verbose_short == true )
+            {
+              if( g_total_aged_node_cnt % print_unit == 0 ) {
+                printf("[total aging #:%d][data list #:%d][aging list #:%d]\n",
+                       g_total_aged_node_cnt,
+                       t->data_list_count,
+                       t->aging_list_count );
+              }
+            }
 #endif /* DEBUG */
 
 #if 1 // IMPRV_SAFETY
-      /* 무조건 한 노드만 aging 한다.
-       * node가 free되었으므로, 이 노드를 액세스하는 것은, 
-       * 쓰레기 값을 읽는 것이다. 다른 트랜잭션이 동일 주소의 노드를
-       * 할당받아 다른 값을 기록할 수도 있다. 따라서 free된 노드의 next를
-       * 참조하면 꼬이는 수가 있다. */
-      goto label_aging_again;
+          /* 무조건 한 노드만 aging 한다.
+           * node가 free되었으므로, 이 노드를 액세스하는 것은, 
+           * 쓰레기 값을 읽는 것이다. 다른 트랜잭션이 동일 주소의 노드를
+           * 할당받아 다른 값을 기록할 수도 있다. 따라서 free된 노드의 next를
+           * 참조하면 꼬이는 수가 있다. */
+          goto label_aging_again;
 #endif
+        }
     }
 
   is_cursor_open = false;
@@ -1355,15 +1440,20 @@ label_aging_again:
   return RC_FAIL;
 }
 
-
-void dump_list( void * l )
+void sig_dump_list( int sig )
 {
-  lf_dlist_t * list = NULL;
-  data_list_node_t * node = NULL;
+  dump_list( g_tbl->list );
+  dump_list( g_tbl->aging_list );
+  return;
+}
+
+void dump_list( lf_dlist_t * volatile list )
+{
+  data_list_node_t * volatile node = NULL;
   dlist_cursor_t    cursor[1] = {};
   int32_t cnt = 0;
 
-  printf("head -----------------------\n");
+  fprintf(stderr, "head -----------------------\n");
   dlist_cursor_open( cursor, list, DL_CURSOR_DIR_FORWARD );
 
   /* print head */
@@ -1373,13 +1463,13 @@ void dump_list( void * l )
     {
       node = dlist_cursor_get_list_node( cursor );
       ++cnt;
-      print_data_list_node( node );
+      print_data_list_node_4_dump( node );
     }
 
   /* print tail */
-  print_data_list_node( node );
+  print_data_list_node_4_dump( node );
 
-  printf("cnt: %d\n\n", cnt); cnt = 0;
+  fprintf(stderr, "cnt: %d\n\n", cnt); cnt = 0;
 }
 
 int32_t working_threads_create( thr_arg_t * targs )

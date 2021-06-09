@@ -35,5 +35,5 @@ echo_stage "INFORMATION - evictor thr: 1, ager thr: 1 (FIXED)";
 ##############################################################################
 echo_stage "basic test - item #: 5,000,000, insert thr: 5, read thr: 10,";
 ##############################################################################
-exec_cmd lf_dlist_test --item-count=5000000 --num-thr-insert=5 --num-thr-read=10
+exec_cmd lf_dlist_test --item-count=5000000 --num-thr-insert=5 --num-thr-read=15 -v
 

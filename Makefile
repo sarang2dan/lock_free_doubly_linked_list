@@ -79,8 +79,9 @@ define AR_cmd
 endef
 
 
-LIB_SRCS = $(SRC_DIR)/lock_free_dlist.c \
-					 $(SRC_DIR)/util.c            \
+LIB_SRCS = $(SRC_DIR)/lock_free_dlist.c         \
+					 $(SRC_DIR)/util.c              \
+					 $(SRC_DIR)/atomic.c            \
 					 $(SRC_DIR)/rand_r.c
 
 LIB_OBJS = $(LIB_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)

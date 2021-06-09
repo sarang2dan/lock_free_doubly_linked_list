@@ -117,8 +117,9 @@ void lf_dlist_single_thread_sanity_check( lf_dlist_t * volatile l )
     } while( node && node->next != l->tail );
 }
 
-dlist_node_t * lf_dlist_get_next( lf_dlist_t * volatile l, dlist_node_t * volatile node )
+dlist_node_t * lf_dlist_get_next( lf_dlist_t * volatile l, dlist_node_t * volatile _node )
 {
+  dlist_node_t * volatile node      = _node;
   dlist_node_t * volatile next      = NULL;
   dlist_node_t * volatile node_next = NULL;
   dlist_node_t * volatile next_next = NULL;
@@ -126,11 +127,7 @@ dlist_node_t * lf_dlist_get_next( lf_dlist_t * volatile l, dlist_node_t * volati
   while( node != l->tail )
     {
       RAW_CHECK( node, "null current node" );
-#if 1 // IMPRV_PERF
       next = lf_dlist_dereference_node_pointer_mem_only( node->next );
-#else
-      next = lf_dlist_dereference_node_pointer( l, (volatile dlist_node_t **)&(node->next) );
-#endif // IMPRV_PERF
       if( next == NULL )
         {
           return NULL;
@@ -153,13 +150,13 @@ dlist_node_t * lf_dlist_get_next( lf_dlist_t * volatile l, dlist_node_t * volati
               /*  But my next pointer isn't pointing the next with the deleted bit set, */
               /*  so we set the deleted bit in next's prev pointer. */
 #if 0 // IMPRV_SAFETY
-              lf_dlist_mark_node_pointer( l, (volatile dlist_node_t **)&(next->prev) );
-#endif // IMPRV_SAFETY
+              lf_dlist_mark_node_pointer( l, (dlist_node_t ** volatile)&(next->prev) );
 
               /*  Now try to unlink the deleted next node */
               (void)atomic_cas_64( &(node->next),
                                    next,
                                    (dlist_node_t * volatile)((uint64_t)next_next & DL_NODE_DELETED_MASK) );
+#endif // IMPRV_SAFETY
               continue;
             }
         }
@@ -177,8 +174,9 @@ dlist_node_t * lf_dlist_get_next( lf_dlist_t * volatile l, dlist_node_t * volati
   return NULL; /*  nothing after tail */
 }
 
-dlist_node_t * lf_dlist_get_prev( lf_dlist_t * volatile l, dlist_node_t * volatile node )
+dlist_node_t * lf_dlist_get_prev( lf_dlist_t * volatile l, dlist_node_t * volatile _node )
 {
+  dlist_node_t * volatile node = _node;
   dlist_node_t * volatile prev;
   dlist_node_t * volatile prev_next;
   dlist_node_t * volatile next;
@@ -186,11 +184,7 @@ dlist_node_t * lf_dlist_get_prev( lf_dlist_t * volatile l, dlist_node_t * volati
   while( node != l->head )
     {
       RAW_CHECK( node, "null current node" );
-#if 1 // IMPRV_PERF
       prev = lf_dlist_dereference_node_pointer_mem_only( node->prev );
-#else
-      prev = lf_dlist_dereference_node_pointer( l, (volatile dlist_node_t **)&(node->prev) );
-#endif // IMPRV_PERF
       RAW_CHECK( prev, "null prev pointer in list" );
 
       prev_next = prev->next;
@@ -219,9 +213,11 @@ dlist_node_t * lf_dlist_get_prev( lf_dlist_t * volatile l, dlist_node_t * volati
 }
 
 DL_STATUS lf_dlist_insert_before( lf_dlist_t   * volatile l,
-                                  dlist_node_t * volatile pivot,
-                                  dlist_node_t * volatile node )
+                                  dlist_node_t * volatile _pivot,
+                                  dlist_node_t * volatile _node )
 {
+  dlist_node_t * volatile pivot = _pivot;
+  dlist_node_t * volatile node  = _node;
   dlist_node_t * volatile pivot_prev = NULL;
   dlist_node_t * volatile pivot_next = NULL;
   dlist_node_t * volatile expected = NULL;
@@ -235,13 +231,8 @@ DL_STATUS lf_dlist_insert_before( lf_dlist_t   * volatile l,
 
   while( true )
     {
-#if 1 // IMPRV_PERF
+      // mem_barrier();
       pivot_prev = lf_dlist_dereference_node_pointer_mem_only( pivot->prev );
-#else
-      pivot_prev = lf_dlist_dereference_node_pointer(
-                                                     l,
-                                                     (volatile dlist_node_t **)&(pivot->prev) );
-#endif // IMPRV_PERF
 
       /*  If the guy supposed to be behind me got deleted, fast */
       /*  forward to its next node and retry */
@@ -290,9 +281,11 @@ DL_STATUS lf_dlist_insert_before( lf_dlist_t   * volatile l,
 }
 
 DL_STATUS lf_dlist_insert_after( lf_dlist_t   * volatile l,
-                                 dlist_node_t * volatile prev,
-                                 dlist_node_t * volatile node )
+                                 dlist_node_t * volatile _prev,
+                                 dlist_node_t * volatile _node )
 {
+  dlist_node_t * volatile prev = _prev;
+  dlist_node_t * volatile node = _node;
   dlist_node_t * volatile prev_next = NULL;
   dlist_node_t * volatile expected = NULL;
 
@@ -305,6 +298,7 @@ DL_STATUS lf_dlist_insert_after( lf_dlist_t   * volatile l,
 
   while( true )
     {
+      mem_barrier();
       prev_next = prev->next;
       node->prev = (dlist_node_t * volatile)((uint64_t)prev & DL_NODE_DELETED_MASK);
       node->next = (dlist_node_t * volatile)((uint64_t)prev_next & DL_NODE_DELETED_MASK);
@@ -367,8 +361,9 @@ DL_STATUS lf_dlist_insert_after( lf_dlist_t   * volatile l,
 }
 #endif
 
-DL_STATUS lf_dlist_delete( lf_dlist_t * volatile l, dlist_node_t * volatile node )
+DL_STATUS lf_dlist_delete( lf_dlist_t * volatile l, dlist_node_t * volatile _node )
 {
+  dlist_node_t * volatile node = _node;
   dlist_node_t * volatile node_next = NULL;
   dlist_node_t * volatile desired   = NULL;
   dlist_node_t * volatile rnode     = NULL;
@@ -386,6 +381,7 @@ DL_STATUS lf_dlist_delete( lf_dlist_t * volatile l, dlist_node_t * volatile node
 
   while( true )
     {
+      mem_barrier();
       node_next = node->next;
       if( (uint64_t)node_next & DL_NODE_DELETED )
         {
@@ -397,13 +393,12 @@ DL_STATUS lf_dlist_delete( lf_dlist_t * volatile l, dlist_node_t * volatile node
 
       rnode = atomic_cas_64( &(node->next), node_next, desired );
 
-      mem_barrier();
-
       if( rnode == node_next )
         {
           node_prev = NULL;
           while( true )
             {
+              mem_barrier();
               node_prev = node->prev;
               if( (uint64_t)node_prev & DL_NODE_DELETED )
                 {
@@ -433,9 +428,11 @@ DL_STATUS lf_dlist_delete( lf_dlist_t * volatile l, dlist_node_t * volatile node
 }
 
 static dlist_node_t * lf_dlist_correct_prev( lf_dlist_t   * volatile l,
-                                             dlist_node_t * volatile prev,
-                                             dlist_node_t * volatile node )
+                                             dlist_node_t * volatile _prev,
+                                             dlist_node_t * volatile _node )
 {
+  dlist_node_t * volatile prev = _prev;
+  dlist_node_t * volatile node = _node;
   dlist_node_t * volatile link1 = NULL;
   dlist_node_t * volatile last_link = NULL;
   dlist_node_t * volatile prev_next = NULL;
@@ -449,6 +446,7 @@ static dlist_node_t * lf_dlist_correct_prev( lf_dlist_t   * volatile l,
 
   while( true )
     {
+      mem_barrier();
       link1 = node->prev;
       if( (uint64_t)link1 & DL_NODE_DELETED )
         {
@@ -463,12 +461,13 @@ static dlist_node_t * lf_dlist_correct_prev( lf_dlist_t   * volatile l,
         }
 #endif
 
+      mem_barrier();
       prev_next = prev_cleared->next;
       if( (uint64_t)prev_next & DL_NODE_DELETED )
         {
           if( last_link )
             {
-              lf_dlist_mark_node_pointer( l, (volatile dlist_node_t **)&prev_cleared->prev );
+              lf_dlist_mark_node_pointer( l, (dlist_node_t ** volatile)&prev_cleared->prev );
               mem_barrier();
 
               desired = (dlist_node_t * volatile)(((uint64_t)prev_next & DL_NODE_DELETED_MASK));
@@ -492,6 +491,7 @@ static dlist_node_t * lf_dlist_correct_prev( lf_dlist_t   * volatile l,
       if( prev_next != node )
         {
           last_link = prev_cleared;
+          mem_barrier();
           prev = prev_next;
           continue;
         }
@@ -522,8 +522,9 @@ static dlist_node_t * lf_dlist_correct_prev( lf_dlist_t   * volatile l,
 }
 
 dlist_node_t * lf_dlist_correct_next( lf_dlist_t   * volatile l,
-                                      dlist_node_t * volatile node )
+                                      dlist_node_t * volatile _node )
 {
+  dlist_node_t * volatile node      = _node;
   dlist_node_t * volatile next      = NULL;
   dlist_node_t * volatile node_next = NULL;
   dlist_node_t * volatile next_next = NULL;
@@ -531,11 +532,8 @@ dlist_node_t * lf_dlist_correct_next( lf_dlist_t   * volatile l,
   while( node != l->tail )
     {
       RAW_CHECK( node, "null current node" );
-#if 1 // IMPRV_PERF
+      mem_barrier();
       next = lf_dlist_dereference_node_pointer_mem_only( node->next );
-#else
-      next = lf_dlist_dereference_node_pointer( l, (volatile dlist_node_t **)&(node->next) );
-#endif // IMPRV_PERF
       if( next == NULL )
         {
           return NULL;
@@ -548,7 +546,7 @@ dlist_node_t * lf_dlist_correct_next( lf_dlist_t   * volatile l,
         {
           /*  But my next pointer isn't pointing the next with the deleted bit set, */
           /*  so we set the deleted bit in next's prev pointer. */
-          lf_dlist_mark_node_pointer( l, (volatile dlist_node_t **)&(next->prev) );
+          lf_dlist_mark_node_pointer( l, (dlist_node_t **volatile)&(next->prev) );
 
           mem_barrier();
           /*  The next pointer of the node behind me has the deleted mark set */
@@ -557,8 +555,8 @@ dlist_node_t * lf_dlist_correct_next( lf_dlist_t   * volatile l,
             {
               /*  Now try to unlink the deleted next node */
               (void)atomic_cas_64( &(node->next),
-                                   next,
-                                   (dlist_node_t * volatile)((uint64_t)next_next & DL_NODE_DELETED_MASK) );
+                                    next,
+                                    (dlist_node_t * volatile)((uint64_t)next_next & DL_NODE_DELETED_MASK) );
               continue;
             }
         }
@@ -587,13 +585,15 @@ void lf_dlist_backoff( lf_dlist_t * volatile l )
     }
 }
 
-void lf_dlist_mark_node_pointer( lf_dlist_t * volatile l, dlist_node_t ** volatile node )
+void lf_dlist_mark_node_pointer( lf_dlist_t * volatile l, dlist_node_t ** volatile _node )
 {
+  dlist_node_t ** volatile node = _node;
   dlist_node_t * volatile node_ptr = NULL;
   uint64_t flags = DL_NODE_DELETED;
 
   while( true )
     {
+      mem_barrier();
       node_ptr = *node;
 
       RAW_CHECK( node_ptr != l->head->next,
@@ -665,6 +665,7 @@ int32_t dlist_cursor_open( dlist_cursor_t    * volatile c,
 
   c->dir = dir;
 
+  mem_barrier();
   if( dir == DL_CURSOR_DIR_FORWARD )
     {
       c->cur_node = c->head;
@@ -695,10 +696,11 @@ void dlist_cursor_close( dlist_cursor_t * volatile c )
     }
 }
 
-void dlist_cursor_reset( dlist_cursor_t * c )
+void dlist_cursor_reset( dlist_cursor_t * volatile c )
 {
   if( c != NULL )
     {
+      mem_barrier();
       if( c->dir == DL_CURSOR_DIR_FORWARD )
         {
           c->cur_node = c->head;
@@ -717,6 +719,7 @@ dlist_node_t * dlist_cursor_next( dlist_cursor_t * volatile c )
 #endif
 
   c->dir = DL_CURSOR_DIR_FORWARD;
+  mem_barrier();
   c->cur_node = lf_dlist_get_next( c->l, c->cur_node );
 
   return (dlist_node_t *)c->cur_node;
@@ -734,6 +737,7 @@ dlist_node_t * dlist_cursor_prev( dlist_cursor_t * volatile c )
   TRY( c == NULL );
 #endif
   c->dir = DL_CURSOR_DIR_BACKWARD;
+  mem_barrier();
   c->cur_node = lf_dlist_get_prev( c->l, c->cur_node );
 
   return (dlist_node_t *)c->cur_node;

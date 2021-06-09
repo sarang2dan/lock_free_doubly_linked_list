@@ -7,7 +7,8 @@
 #include "util.h"
 #include "rand_r.h"
 
-typedef struct _dlist_node dlist_node_t;
+typedef volatile struct _dlist_node _dlist_node_t;
+#define dlist_node_t volatile _dlist_node_t
 struct _dlist_node
 {
   dlist_node_t * volatile prev; /*  8-byte */
@@ -45,11 +46,12 @@ enum _dl_status
  * the underlying node is logically DELETED or DIRTY*/
 /* NOTE: 최상위 2비트는 사용하지 않는 것이 좋음.
  * HP-UX의 메모리 모델  때문. */
-#define DL_NODE_DIRTY    ((uint64_t)0x0000000000000001) // ((uint64_t)1 << 0)
-#define DL_NODE_DELETED  ((uint64_t)0x0000000000000002) // ((uint64_t)1 << 1)
-#define DL_NODE_DELETED_MASK  ((uint64_t)0xFFFFFFFFFFFFFFFD) // (~DL_NODE_DELETED)
+static const uint64_t DL_NODE_DIRTY         = ((uint64_t)0x0000000000000001); // ((uint64_t)1 << 0)
+static const uint64_t DL_NODE_DELETED       = ((uint64_t)0x0000000000000002); // ((uint64_t)1 << 1)
+static const uint64_t DL_NODE_DELETED_MASK  = ~DL_NODE_DELETED; // ((uint64_t)0xFFFFFFFFFFFFFFFD);
 
-typedef struct _lock_free_doubly_linked_list volatile lf_dlist_t;
+typedef volatile struct _lock_free_doubly_linked_list volatile _lf_dlist_t;
+#define lf_dlist_t volatile _lf_dlist_t
 struct _lock_free_doubly_linked_list
 {
   dlist_node_t * volatile head;
@@ -111,7 +113,8 @@ enum _dlist_cursor_move_direction
   DL_CURSOR_DIR_BACKWARD = 2   // tail -> head
 };
 
-typedef struct _dlist_cursor dlist_cursor_t;
+typedef volatile struct _dlist_cursor _dlist_cursor_t;
+#define dlist_cursor_t volatile _dlist_cursor_t
 struct _dlist_cursor
 {
   lf_dlist_t   * volatile l;
@@ -121,15 +124,15 @@ struct _dlist_cursor
   dlist_cursor_dir_t dir;
 };
 
-int32_t dlist_cursor_open( dlist_cursor_t    * c,
-                           lf_dlist_t        * l,
+int32_t dlist_cursor_open( dlist_cursor_t    * volatile c,
+                           lf_dlist_t        * volatile l,
                            dlist_cursor_dir_t  dir );
-void dlist_cursor_close( dlist_cursor_t * c );
-bool dlist_cursor_is_eol( dlist_cursor_t * c );
+void dlist_cursor_close( dlist_cursor_t * volatile c );
+bool dlist_cursor_is_eol( dlist_cursor_t * volatile c );
 
-void dlist_cursor_reset( dlist_cursor_t * c );
-dlist_node_t * dlist_cursor_next( dlist_cursor_t * c );
-dlist_node_t * dlist_cursor_prev( dlist_cursor_t * c );
+void dlist_cursor_reset( dlist_cursor_t * volatile c );
+dlist_node_t * dlist_cursor_next( dlist_cursor_t * volatile c );
+dlist_node_t * dlist_cursor_prev( dlist_cursor_t * volatile c );
 #else // IMPRV_PERF
 
 #endif /* _DOUBLEY_LINKED_LIST_H_ */
