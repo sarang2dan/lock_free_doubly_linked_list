@@ -29,7 +29,7 @@ const int32_t THR_NUM_AGER    = 1;
 #define RC_EXIT_PROGRAM  1
 
 typedef void * (*thread_func_t) ( void * arg );
-volatile int32_t  g_next_key = 0;
+volatile int32_t  g_next_key =   -1;
 volatile int32_t  g_delete_cnt = 0;
 volatile int32_t  MAX_ITEM_CNT = 0;
 
@@ -81,9 +81,9 @@ char * make_error_prefix( char        * buf,
     data_list_node_t * _node = (data_list_node_t *)(_n);                \
     if( _node ) {                                                       \
       fprintf( stderr,                                                  \
-               "%s():%d :[key:%d] [rd#:%d] [n:%p] [prev: %p] [next: %p]"                 \
-               " [ag_prev: %p] [ag_next: %p] "                          \
-               " [key:%d] [state:%s]\n",                                \
+               "%s():%d :[key:%d] [rd#:%d] [n:%p] [prev: %p] [next: %p] " \
+               "[ag_prev: %p] [ag_next: %p] "                          \
+               "[state:%s]\n",                                \
                __func__, __LINE__,                                      \
                (_node)->key,                                            \
                (_node)->read_cnt,                                            \
@@ -104,7 +104,7 @@ char * make_error_prefix( char        * buf,
 #define  print_data_list_node_4_dump( _node )  _print_data_list_node( _node )
 #else
 #define print_data_list_node( _node )
-#define  print_data_list_node_4_dump  _print_data_list_node
+#define  print_data_list_node_4_dump( _node )  _print_data_list_node( _node )
 #endif
 
 typedef enum _dlist_node_state dlist_node_state_t;
@@ -576,10 +576,13 @@ int32_t main( int32_t argc, char ** argv )
 int32_t insert_data( data_table_t * tbl )
 {
   data_list_node_t   * volatile node = NULL;;
-  int32_t    key = 0; // atomic_fetch_inc( &g_next_key );
+  int32_t    key = 0; // atomic_inc_fetch( &g_next_key );
 
-  // pthread_mutex_lock( g_mtx );
-  key = atomic_fetch_inc( &g_next_key );
+#ifdef USING_PTHREAD_MUTEX_ONLY_INSERT
+  pthread_mutex_lock( g_mtx );
+#endif /* USING_PTHREAD_MUTEX_ONLY_INSERT */
+
+  key = atomic_inc_fetch( &g_next_key );
   if( key < MAX_ITEM_CNT ) {
     node = data_table_insert( tbl, key );
     TRY( node == NULL );
@@ -588,13 +591,15 @@ int32_t insert_data( data_table_t * tbl )
     // set some data;
     // node->data = some data;
     // thread_sleep( 0, 1 ); // simulate that copy & set data on the node    
-    lf_dlist_backoff( tbl->list );
+    // lf_dlist_backoff( tbl->list );
 #endif
 
     // complete and then change state to (reference) available
     data_list_node_set_state( node, DLIST_NODE_STATE_AVAIL );
   }
-  // pthread_mutex_unlock( g_mtx );
+#ifdef USING_PTHREAD_MUTEX_ONLY_INSERT
+  pthread_mutex_unlock( g_mtx );
+#endif /* USING_PTHREAD_MUTEX_ONLY_INSERT */
 
   return RC_SUCCESS;
 
@@ -710,7 +715,7 @@ int32_t data_table_search( data_table_t      * volatile t,
     {
       mem_barrier();
       node = dlist_cursor_get_list_node( cursor );
-      atomic_fetch_inc( &(node->read_latch) );  // get read lock
+      atomic_inc_fetch( &(node->read_latch) );  // get read lock
       is_locked = true;
 
       _key = node->key;
@@ -757,7 +762,7 @@ int32_t data_table_search( data_table_t      * volatile t,
         }
 
       is_locked = false; 
-      atomic_fetch_dec( &(node->read_latch) );  // release read lock
+      atomic_dec_fetch( &(node->read_latch) );  // release read lock
 
       upper_key_range = ((int32_t)(t->data_list_count) < 128 ) ?
         (int32_t)(t->data_list_count - 1) : 128;
@@ -776,7 +781,7 @@ label_break_iterate:
 
   if( is_locked == true )
     {
-      atomic_fetch_dec( &(node->read_latch) );  // release read lock
+      atomic_dec_fetch( &(node->read_latch) );  // release read lock
     }
 
   return RC_SUCCESS;
@@ -785,7 +790,7 @@ label_break_iterate:
 
   if( is_locked == true )
     {
-      atomic_fetch_dec( &(node->read_latch) );  // release read lock
+      atomic_dec_fetch( &(node->read_latch) );  // release read lock
     }
 
   return RC_FAIL;
@@ -849,11 +854,11 @@ void * func_read( void * arg )
         {
           break_cnt = 0;
           // success to get item with 'key'
-          atomic_fetch_inc( &(node->read_latch) );  // get read lock
+          atomic_inc_fetch( &(node->read_latch) );  // get read lock
           _simulate_do_something( tbl, node );
-          atomic_fetch_dec( &(node->read_latch) );  // release read lock
+          atomic_dec_fetch( &(node->read_latch) );  // release read lock
 
-          atomic_fetch_inc( &(node->read_cnt) );
+          atomic_inc_fetch( &(node->read_cnt) );
 
           search_key++;  // want to search next key
         }
@@ -923,7 +928,7 @@ void * func_aging( void * arg )
           ret = data_list_delete_evicted( tbl );
           g_delete_cnt += ret;
 
-          if( g_delete_cnt == MAX_ITEM_CNT )
+          if( g_delete_cnt >= MAX_ITEM_CNT - 5 )
             {
               g_exit_flag = true;
               break;
@@ -1016,6 +1021,10 @@ data_list_node_t * data_table_insert( data_table_t * volatile t, int32_t key )
 
 label_insert_again:
   mem_barrier();
+#ifdef USING_PTHREAD_MUTEX_ONLY_INSERT
+  st = lf_dlist_insert_before( t->list, t->list->tail, (dlist_node_t *)new_node);
+  TRY_GOTO( st != DL_STATUS_OK, label_insert_again );
+#else /* USING_PTHREAD_MUTEX_ONLY_INSERT */
   TRY( dlist_cursor_open( cursor, t->list, DL_CURSOR_DIR_BACKWARD ) != RC_SUCCESS );
   is_cursor_open = true;
 
@@ -1047,7 +1056,7 @@ label_insert_again:
 
       if( cmp_ret > 1 )
         {
-          thread_sleep( 0, 1 );
+          thread_sleep( 0, 10 );
           goto label_insert_again;
         }
     }
@@ -1056,6 +1065,7 @@ label_insert_again:
 
   is_cursor_open = false;
   dlist_cursor_close( cursor );
+#endif /* USING_PTHREAD_MUTEX_ONLY_INSERT */
 
   atomic_inc_fetch( &(t->data_list_count) );
 
@@ -1154,6 +1164,11 @@ label_try_again:
                 {
                   cur_node_next = cursor->cur_node->next;
 
+                  if( t->data_list_count < THRESHOLD_WORKING_SLOW_EVICTOR )
+                    {
+                      thread_sleep( 0, THRESHOLD_WORKING_SLOW_EVICTOR * 10 );
+                    }
+
                   if( DL_STATUS_OK == lf_dlist_delete( cursor->l, cursor->cur_node ) )
                     {
                       /* IMPORTANT:
@@ -1226,8 +1241,8 @@ label_try_again:
                         ret = data_list_node_set_state( node, DLIST_NODE_STATE_EVICTED );
                       } while( ret != RC_SUCCESS );
 
-                      atomic_fetch_dec( &(t->data_list_count) );
-                      atomic_fetch_inc( &(t->aging_list_count) );
+                      atomic_dec_fetch( &(t->data_list_count) );
+                      atomic_inc_fetch( &(t->aging_list_count) );
                       break;
                     }
                   else
@@ -1284,7 +1299,12 @@ int32_t data_list_delete_evicted( volatile data_table_t * t )
   volatile bool       is_cursor_open = false;
   volatile uint32_t   aging_cnt = 0;
   int32_t     ret = 0;
-  int32_t     print_unit = (int)(MAX_ITEM_CNT/10);
+  int32_t     print_unit = (int)(MAX_ITEM_CNT/1000);
+
+  if( print_unit == 0 )
+    {
+       print_unit = 100;
+    }
 
   (void)dlist_cursor_open( cursor, t->aging_list, DL_CURSOR_DIR_FORWARD );
   is_cursor_open = true;
@@ -1391,8 +1411,8 @@ label_aging_again:
           free( node );
           node = NULL;
 
-          atomic_fetch_dec( &(t->aging_list_count) );
-          atomic_fetch_inc( &g_total_aged_node_cnt );
+          atomic_dec_fetch( &(t->aging_list_count) );
+          atomic_inc_fetch( &g_total_aged_node_cnt );
 
           aging_cnt++;
 
@@ -1410,6 +1430,7 @@ label_aging_again:
                        g_total_aged_node_cnt,
                        t->data_list_count,
                        t->aging_list_count );
+                fflush(stdout);
               }
             }
 #endif /* DEBUG */
@@ -1465,9 +1486,6 @@ void dump_list( lf_dlist_t * volatile list )
       ++cnt;
       print_data_list_node_4_dump( node );
     }
-
-  /* print tail */
-  print_data_list_node_4_dump( node );
 
   fprintf(stderr, "cnt: %d\n\n", cnt); cnt = 0;
 }

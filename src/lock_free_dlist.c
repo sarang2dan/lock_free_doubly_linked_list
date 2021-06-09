@@ -200,7 +200,7 @@ dlist_node_t * lf_dlist_get_prev( lf_dlist_t * volatile l, dlist_node_t * volati
         {
           if( (uint64_t)next & DL_NODE_DELETED )
             {
-              node = lf_dlist_get_next( l, node );
+              node = lf_dlist_correct_next( l, node );
             }
           else
             {
@@ -554,9 +554,13 @@ dlist_node_t * lf_dlist_correct_next( lf_dlist_t   * volatile l,
           if( (uint64_t)node_next != ((uint64_t)next | DL_NODE_DELETED) )
             {
               /*  Now try to unlink the deleted next node */
-              (void)atomic_cas_64( &(node->next),
+              while( next !=
+                     atomic_cas_64( &(node->next),
                                     next,
-                                    (dlist_node_t * volatile)((uint64_t)next_next & DL_NODE_DELETED_MASK) );
+                                    (dlist_node_t * volatile)((uint64_t)next_next & DL_NODE_DELETED_MASK) ));
+                {
+                  break;
+                }
               continue;
             }
         }

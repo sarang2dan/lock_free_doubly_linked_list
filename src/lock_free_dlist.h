@@ -48,7 +48,7 @@ enum _dl_status
  * HP-UX의 메모리 모델  때문. */
 static const uint64_t DL_NODE_DIRTY         = ((uint64_t)0x0000000000000001); // ((uint64_t)1 << 0)
 static const uint64_t DL_NODE_DELETED       = ((uint64_t)0x0000000000000002); // ((uint64_t)1 << 1)
-static const uint64_t DL_NODE_DELETED_MASK  = ~DL_NODE_DELETED; // ((uint64_t)0xFFFFFFFFFFFFFFFD);
+static const uint64_t DL_NODE_DELETED_MASK  = ((uint64_t)0xFFFFFFFFFFFFFFFD);
 
 typedef volatile struct _lock_free_doubly_linked_list volatile _lf_dlist_t;
 #define lf_dlist_t volatile _lf_dlist_t
