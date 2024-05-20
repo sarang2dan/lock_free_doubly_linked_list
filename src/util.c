@@ -13,9 +13,16 @@
 
 uint64_t rdtsc(void)
 {
+#ifdef __APPLE__
+    struct timespec t;
+
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return ((uint64_t)t.tv_sec * 10000000000) + t.tv_nsec;
+#else
     unsigned hi, lo;
     __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
     return ( (uint64_t)lo)|( ((uint64_t)hi)<<32 );
+#endif
 }
 
 int thread_sleep( uint64_t sec, uint64_t usec )

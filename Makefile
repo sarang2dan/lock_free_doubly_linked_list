@@ -46,11 +46,17 @@ _v_javac_0 = @echo " JAVAC    " $@ ;
 _v_javac_1 =
 
 
+OS := $(shell uname)
+
+CFLAGS :=-g -O2
+ifeq ($(OS), Darwin)
+CFLAGS += -DUSE_GCC_BUILTIN_ATOMIC=1
+endif
+
 CC=gcc
-LD=gcc
+LD=$(CC)
 AR=ar
 
-CFLAGS=-g -O2
 INCLUDES=-I$(SRC_DIR)
 DEFS=
 #DEFS=-DUSING_PTHREAD_MUTEX_ONLY_INSERT
@@ -131,5 +137,4 @@ $(LIB_DIR)/%.a: $(LIB_OBJS)
 
 clean:
 	rm -f $(BINS) $(OBJS) $(LIBS)
-
 
