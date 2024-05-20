@@ -102,10 +102,6 @@ OBJS = $(LIB_OBJS) $(TEST_OBJS)
 LIBS = $(LIB_DIR)/liblflist.a
 BINS = $(TEST_BINS)
 
-echo:
-	@echo "$(V_CC)"
-	@echo "$(_v_cc_)"
-
 all: mkdirs
 	$(Q) $(MAKE) build
 
@@ -141,5 +137,4 @@ $(LIB_DIR)/%.a: $(LIB_OBJS)
 
 clean:
 	rm -f $(BINS) $(OBJS) $(LIBS)
-
 
