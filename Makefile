@@ -46,11 +46,17 @@ _v_javac_0 = @echo " JAVAC    " $@ ;
 _v_javac_1 =
 
 
+OS := $(shell uname)
+
+CFLAGS :=-g -O2
+ifeq ($(OS), Darwin)
+CFLAGS += -DUSE_GCC_BUILTIN_ATOMIC=1
+endif
+
 CC=gcc
-LD=gcc
+LD=$(CC)
 AR=ar
 
-CFLAGS=-g -O2
 INCLUDES=-I$(SRC_DIR)
 DEFS=
 #DEFS=-DUSING_PTHREAD_MUTEX_ONLY_INSERT
@@ -95,6 +101,10 @@ TEST_LDFLAGS = $(LDFLAGS) -lc -lm -lpthread -llflist -L./lib
 OBJS = $(LIB_OBJS) $(TEST_OBJS)
 LIBS = $(LIB_DIR)/liblflist.a
 BINS = $(TEST_BINS)
+
+echo:
+	@echo "$(V_CC)"
+	@echo "$(_v_cc_)"
 
 all: mkdirs
 	$(Q) $(MAKE) build
