@@ -343,8 +343,8 @@ int32_t main( int32_t argc, char ** argv )
         case 0:
           switch( long_opt_idx )
             {
-              /* long_options¿¡¼­ Á¤ÀÇÇÒ ¶§, short optionÀÌ ÁöÁ¤µÇÁö ¾Ê¾ÒÀ¸¸é,
-               * ¿©±â·Î case °¡ ÁøÇàµÈ´Ù. */
+              /* long_optionsì—ì„œ ì •ì˜í•  ë•Œ, short optionì´ ì§€ì •ë˜ì§€ ì•Šì•˜ìœ¼ë©´,
+               * ì—¬ê¸°ë¡œ case ê°€ ì§„í–‰ëœë‹¤. */
             default:
               break;
             }
@@ -609,7 +609,7 @@ int32_t insert_data( data_table_t * tbl )
 }
 
 /*******************************************************
- * list ±¸Á¶ ¹× ¿ÀÆÛ·¹ÀÌ¼ÇÀÌ ÀÏ¾î³ª´Â À§Ä¡
+ * list êµ¬ì¡° ë° ì˜¤í¼ë ˆì´ì…˜ì´ ì¼ì–´ë‚˜ëŠ” ìœ„ì¹˜
  *
  *            (evict)             (insert)
  * +-> HEAD <--> N1 <--> N2 <--> Ni <--> TAIL <-+
@@ -1133,7 +1133,7 @@ label_try_again:
 
           if( node->state < DLIST_NODE_STATE_NEED_EVICT )
             {
-              /* evictor´Â Åð°Å´ë»óÀÎÁö °Ë»çÇÑ ÈÄ '»óÅÂ º¯°æ' ¹× Åð°ÅÇÑ´Ù */
+              /* evictorëŠ” í‡´ê±°ëŒ€ìƒì¸ì§€ ê²€ì‚¬í•œ í›„ 'ìƒíƒœ ë³€ê²½' ë° í‡´ê±°í•œë‹¤ */
               is_need_evict = data_list_check_need_evict( node->read_cnt, THR_NUM_READ );
               if( is_need_evict == true )
                 {
@@ -1144,11 +1144,11 @@ label_try_again:
                 }
               else
                 {
-                  /* ¹«Á¶°Ç Ã¹ ³ëµå¸¸ ¿¡ÀÌÂ¡ÇÑ´Ù.
-                   * node°¡ freeµÇ¾úÀ¸¹Ç·Î, ÀÌ ³ëµå¸¦ ¾×¼¼½ºÇÏ´Â °ÍÀº,
-                   * ¾²·¹±â °ªÀ» ÀÐ´Â °ÍÀÌ´Ù. ´Ù¸¥ Æ®·£Àè¼ÇÀÌ µ¿ÀÏ ÁÖ¼ÒÀÇ ³ëµå¸¦
-                   * ÇÒ´ç¹Þ¾Æ ´Ù¸¥ °ªÀ» ±â·ÏÇÒ ¼öµµ ÀÖ´Ù. µû¶ó¼­ freeµÈ ³ëµåÀÇ next¸¦
-                   * ÂüÁ¶ÇÏ¸é ²¿ÀÌ´Â ¼ö°¡ ÀÖ´Ù. */
+                  /* ë¬´ì¡°ê±´ ì²« ë…¸ë“œë§Œ ì—ì´ì§•í•œë‹¤.
+                   * nodeê°€ freeë˜ì—ˆìœ¼ë¯€ë¡œ, ì´ ë…¸ë“œë¥¼ ì•¡ì„¸ìŠ¤í•˜ëŠ” ê²ƒì€,
+                   * ì“°ë ˆê¸° ê°’ì„ ì½ëŠ” ê²ƒì´ë‹¤. ë‹¤ë¥¸ íŠ¸ëžœìž­ì…˜ì´ ë™ì¼ ì£¼ì†Œì˜ ë…¸ë“œë¥¼
+                   * í• ë‹¹ë°›ì•„ ë‹¤ë¥¸ ê°’ì„ ê¸°ë¡í•  ìˆ˜ë„ ìžˆë‹¤. ë”°ë¼ì„œ freeëœ ë…¸ë“œì˜ nextë¥¼
+                   * ì°¸ì¡°í•˜ë©´ ê¼¬ì´ëŠ” ìˆ˜ê°€ ìžˆë‹¤. */
                   goto label_try_again;
                 }
             }
@@ -1157,7 +1157,7 @@ label_try_again:
           printf(" - evict node - key:%d\n", node->key );
 #endif /* DEBUG */
 
-          /* EVICT¸¦ ¼öÇàÇÏ´Â ºí·°! */
+          /* EVICTë¥¼ ìˆ˜í–‰í•˜ëŠ” ë¸”ëŸ­! */
             {
               /* node->state == DLIST_NODE_STATE_NEED_EVICT */
               while( true )
@@ -1172,26 +1172,26 @@ label_try_again:
                   if( DL_STATUS_OK == lf_dlist_delete( cursor->l, cursor->cur_node ) )
                     {
                       /* IMPORTANT:
-                       * ¾Æ·¡ ÇÔ¼ö È£Ãâ ÀÌÀü±îÁö ¾Æ·¡¿Í °°Àº »óÈ²ÀÌ´Ù.
+                       * ì•„ëž˜ í•¨ìˆ˜ í˜¸ì¶œ ì´ì „ê¹Œì§€ ì•„ëž˜ì™€ ê°™ì€ ìƒí™©ì´ë‹¤.
                        * node1    <-------------------  node2
                        *   |  \-----d---|                 ^
                        *   ---------->  delnode -----d----|
                        *
-                       *   µû¶ó¼­ ¾Æ·¡ÇÔ¼ö¸¦ È£ÃâÇÏ¿© 
+                       *   ë”°ë¼ì„œ ì•„ëž˜í•¨ìˆ˜ë¥¼ í˜¸ì¶œí•˜ì—¬ 
                        * node1  <----------------->   node2
                        *     ^                          ^
                        *     ----d---- delnode ----d----|
-                       *  ¿Í °°Àº »ýÅÂ·Î ¸¸µé¾î ÁØ´Ù*/
+                       *  ì™€ ê°™ì€ ìƒíƒœë¡œ ë§Œë“¤ì–´ ì¤€ë‹¤*/
                       for( tmp = cur_node_next; tmp != cursor->l->head ; )
                         {
                           tmp = lf_dlist_get_prev( cursor->l, tmp );
                         }
 
-                      /* Æ®·£Àè¼Ç À¯ÀÔÀÌ ÀÖ´Ù¸é evictor°¡ µ¿ÀÛÇÒ °ÍÀÌ´Ù.
-                       * ÀÌ¶§, list¿¡ ¸®½ºÆ® ³ëµå°¡ ÀûÀ» ¼ö·Ï, 
-                       * insert ½º·¹µå¿Í evictor°¡ ¼­·Î Ãæµ¹ÇÏ¿© ¿ªÀüµÉ È®·üÀÌ ³ô¾ÆÁø´Ù. 
-                       * ÀÌ¸¦ ¹æÁöÇÏ±â À§ÇØ µ¥ÀÌÅÍ ¸®½ºÆ®ÀÇ °³¼ö°¡ Àû°í, ¼öÇàµÇ´Â
-                       * Æ®·£Àè¼ÇÀÌ ÀÖ´Ù¸é, evictor°¡ ´À¸®°Ô µ¿ÀÛÇØ¾ß ÇÑ´Ù. */
+                      /* íŠ¸ëžœìž­ì…˜ ìœ ìž…ì´ ìžˆë‹¤ë©´ evictorê°€ ë™ìž‘í•  ê²ƒì´ë‹¤.
+                       * ì´ë•Œ, listì— ë¦¬ìŠ¤íŠ¸ ë…¸ë“œê°€ ì ì„ ìˆ˜ë¡, 
+                       * insert ìŠ¤ë ˆë“œì™€ evictorê°€ ì„œë¡œ ì¶©ëŒí•˜ì—¬ ì—­ì „ë  í™•ë¥ ì´ ë†’ì•„ì§„ë‹¤. 
+                       * ì´ë¥¼ ë°©ì§€í•˜ê¸° ìœ„í•´ ë°ì´í„° ë¦¬ìŠ¤íŠ¸ì˜ ê°œìˆ˜ê°€ ì ê³ , ìˆ˜í–‰ë˜ëŠ”
+                       * íŠ¸ëžœìž­ì…˜ì´ ìžˆë‹¤ë©´, evictorê°€ ëŠë¦¬ê²Œ ë™ìž‘í•´ì•¼ í•œë‹¤. */
                       if( t->data_list_count <= THRESHOLD_WORKING_SLOW_EVICTOR ) /* && insert threads are doing some operations. */
                         {
                           lf_dlist_backoff( t->aging_list );
@@ -1216,10 +1216,10 @@ label_try_again:
                 }
 
               /* NOTE:
-               * ÀÌÈÄ¿¡ ÀÌ »èÁ¦ÇÒ ³ëµå·Î µé¾î¿Ã ¼ö ÀÖ´Â ¸µÅ©´Â ¾ø¾î¾ß ÇÑ´Ù.
-               * ¸¸ÀÏ, tb_f_malloc()  ÇÔ¼ö¿¡¼­ DL_NODE_DELETED ºñÆ®·Î »õ°ÜÁø
-               * ¸µÅ©¸¦ ¾×¼¼½ºÇÏ´Ù°¡ Á×´Â ¹®Á¦°¡ ¹ß»ýÇÏ¸é, backoff ½Ã°£ÀÌ
-               * Âª¾Æ¼­ »ý±â´Â ¹®Á¦´Ù. */
+               * ì´í›„ì— ì´ ì‚­ì œí•  ë…¸ë“œë¡œ ë“¤ì–´ì˜¬ ìˆ˜ ìžˆëŠ” ë§í¬ëŠ” ì—†ì–´ì•¼ í•œë‹¤.
+               * ë§Œì¼, tb_f_malloc()  í•¨ìˆ˜ì—ì„œ DL_NODE_DELETED ë¹„íŠ¸ë¡œ ìƒˆê²¨ì§„
+               * ë§í¬ë¥¼ ì•¡ì„¸ìŠ¤í•˜ë‹¤ê°€ ì£½ëŠ” ë¬¸ì œê°€ ë°œìƒí•˜ë©´, backoff ì‹œê°„ì´
+               * ì§§ì•„ì„œ ìƒê¸°ëŠ” ë¬¸ì œë‹¤. */
               mem_barrier();
 
               while( true )
@@ -1247,8 +1247,8 @@ label_try_again:
                     }
                   else
                     {
-                      /* ager¿Í Ãæµ¹ÀÌ ³µÀ» °ÍÀÌ´Ù. 
-                       * ¹é¿ÀÇÁÇÏ¿© »ðÀÔ ½ÃÁ¡À» Á¶Á¤ÇÑ´Ù */
+                      /* agerì™€ ì¶©ëŒì´ ë‚¬ì„ ê²ƒì´ë‹¤. 
+                       * ë°±ì˜¤í”„í•˜ì—¬ ì‚½ìž… ì‹œì ì„ ì¡°ì •í•œë‹¤ */
                       lf_dlist_backoff( t->aging_list );
                       lf_dlist_backoff( t->aging_list );
                       thread_sleep( 0 , 1 );
@@ -1258,11 +1258,11 @@ label_try_again:
               evict_cnt++;
 
 #if 1 // IMPRV_SAFETY
-              /* ¹«Á¶°Ç Ã¹ ³ëµå¸¸ ¿¡ÀÌÂ¡ÇÑ´Ù. 
-               * node°¡ freeµÇ¾úÀ¸¹Ç·Î, ÀÌ ³ëµå¸¦ ¾×¼¼½ºÇÏ´Â °ÍÀº, 
-               * ¾²·¹±â °ªÀ» ÀÐ´Â °ÍÀÌ´Ù. ´Ù¸¥ Æ®·£Àè¼ÇÀÌ µ¿ÀÏ ÁÖ¼ÒÀÇ ³ëµå¸¦
-               * ÇÒ´ç¹Þ¾Æ ´Ù¸¥ °ªÀ» ±â·ÏÇÒ ¼öµµ ÀÖ´Ù. µû¶ó¼­ freeµÈ ³ëµåÀÇ next¸¦
-               * ÂüÁ¶ÇÏ¸é ²¿ÀÌ´Â ¼ö°¡ ÀÖ´Ù. */
+              /* ë¬´ì¡°ê±´ ì²« ë…¸ë“œë§Œ ì—ì´ì§•í•œë‹¤. 
+               * nodeê°€ freeë˜ì—ˆìœ¼ë¯€ë¡œ, ì´ ë…¸ë“œë¥¼ ì•¡ì„¸ìŠ¤í•˜ëŠ” ê²ƒì€, 
+               * ì“°ë ˆê¸° ê°’ì„ ì½ëŠ” ê²ƒì´ë‹¤. ë‹¤ë¥¸ íŠ¸ëžœìž­ì…˜ì´ ë™ì¼ ì£¼ì†Œì˜ ë…¸ë“œë¥¼
+               * í• ë‹¹ë°›ì•„ ë‹¤ë¥¸ ê°’ì„ ê¸°ë¡í•  ìˆ˜ë„ ìžˆë‹¤. ë”°ë¼ì„œ freeëœ ë…¸ë“œì˜ nextë¥¼
+               * ì°¸ì¡°í•˜ë©´ ê¼¬ì´ëŠ” ìˆ˜ê°€ ìžˆë‹¤. */
               // goto label_try_again;
               break;
 #endif // IMPRV_SAFETY
@@ -1331,10 +1331,10 @@ label_aging_again:
           mem_barrier();
           TRY_GOTO( node->state < DLIST_NODE_STATE_EVICTED, label_aging_again ); 
 
-          /* ¾Æ·¡ ÄÚµå´Â multi-ager¸¦ ¿°µÎÇØµÐ ÄÚµå´Ù.
-           * 2°³ÀÌ»óÀÇ ager°¡ µ¿ÀÛÇÒ ¶§´Â ÀÌ ÄÚµå°¡ À¯¿ëÇÒ °Í. 
-           * Áï, ÇöÀç ³ëµå´Â ´Ù¸¥ ¿¡ÀÌÂ¡ ½º·¹µå°¡ aging ÇÏ´Â ÁßÀÌ´Ï ´ÙÀ½ ³ëµå¸¦
-           * ½ÃµµÇÑ´Ù. */
+          /* ì•„ëž˜ ì½”ë“œëŠ” multi-agerë¥¼ ì—¼ë‘í•´ë‘” ì½”ë“œë‹¤.
+           * 2ê°œì´ìƒì˜ agerê°€ ë™ìž‘í•  ë•ŒëŠ” ì´ ì½”ë“œê°€ ìœ ìš©í•  ê²ƒ. 
+           * ì¦‰, í˜„ìž¬ ë…¸ë“œëŠ” ë‹¤ë¥¸ ì—ì´ì§• ìŠ¤ë ˆë“œê°€ aging í•˜ëŠ” ì¤‘ì´ë‹ˆ ë‹¤ìŒ ë…¸ë“œë¥¼
+           * ì‹œë„í•œë‹¤. */
           ret = data_list_node_set_state( node, DLIST_NODE_STATE_ON_AGING );
           if( ret != RC_SUCCESS )
             {
@@ -1353,8 +1353,8 @@ label_aging_again:
             {
               cur_node_next = cursor->cur_node->next;
 
-              /* µ¥ÀÌÅÍ »ðÀÔÀÌ ÀÖ´Ù¸é evictor°¡ µ¿ÀÛÇÒ °ÍÀÎµ¥, 
-               * aging list¿¡ ´ëÇÑ Ãæµ¹È®·üÀÌ ³ô¾ÆÁø´Ù. ÀÌ¶§´Â ager°¡ »ìÂ¦ ½¬¾îÁØ´Ù. */
+              /* ë°ì´í„° ì‚½ìž…ì´ ìžˆë‹¤ë©´ evictorê°€ ë™ìž‘í•  ê²ƒì¸ë°, 
+               * aging listì— ëŒ€í•œ ì¶©ëŒí™•ë¥ ì´ ë†’ì•„ì§„ë‹¤. ì´ë•ŒëŠ” agerê°€ ì‚´ì§ ì‰¬ì–´ì¤€ë‹¤. */
               if( (t->aging_list_count <= THRESHOLD_WORKING_SLOW_AGER ) &&
                   (t->data_list_count == 1) )
                 {
@@ -1367,16 +1367,16 @@ label_aging_again:
               if( DL_STATUS_OK == lf_dlist_delete( cursor->l, cursor->cur_node ) )
                 {
                   /* IMPORTANT:
-                   * ¾Æ·¡ ÇÔ¼ö È£Ãâ ÀÌÀü±îÁö ¾Æ·¡¿Í °°Àº »óÈ²ÀÌ´Ù.
+                   * ì•„ëž˜ í•¨ìˆ˜ í˜¸ì¶œ ì´ì „ê¹Œì§€ ì•„ëž˜ì™€ ê°™ì€ ìƒí™©ì´ë‹¤.
                    * node1    <-------------------  node2
                    *     |<-----d---|                 ^
                    *     -------->  delnode -----d----|
                    *
-                   *   µû¶ó¼­ ¾Æ·¡ÇÔ¼ö¸¦ È£ÃâÇÏ¿© 
+                   *   ë”°ë¼ì„œ ì•„ëž˜í•¨ìˆ˜ë¥¼ í˜¸ì¶œí•˜ì—¬ 
                    * node1  <----------------->   node2
                    *     ^                          ^
                    *     ----d---- delnode ----d----|
-                   *  ¿Í °°Àº »ýÅÂ·Î ¸¸µé¾î ÁØ´Ù*/
+                   *  ì™€ ê°™ì€ ìƒíƒœë¡œ ë§Œë“¤ì–´ ì¤€ë‹¤*/
                   for( tmp = cur_node_next; tmp != cursor->l->head ; )
                     {
                       tmp = lf_dlist_get_prev( cursor->l, tmp );
@@ -1436,11 +1436,11 @@ label_aging_again:
 #endif /* DEBUG */
 
 #if 1 // IMPRV_SAFETY
-          /* ¹«Á¶°Ç ÇÑ ³ëµå¸¸ aging ÇÑ´Ù.
-           * node°¡ freeµÇ¾úÀ¸¹Ç·Î, ÀÌ ³ëµå¸¦ ¾×¼¼½ºÇÏ´Â °ÍÀº, 
-           * ¾²·¹±â °ªÀ» ÀÐ´Â °ÍÀÌ´Ù. ´Ù¸¥ Æ®·£Àè¼ÇÀÌ µ¿ÀÏ ÁÖ¼ÒÀÇ ³ëµå¸¦
-           * ÇÒ´ç¹Þ¾Æ ´Ù¸¥ °ªÀ» ±â·ÏÇÒ ¼öµµ ÀÖ´Ù. µû¶ó¼­ freeµÈ ³ëµåÀÇ next¸¦
-           * ÂüÁ¶ÇÏ¸é ²¿ÀÌ´Â ¼ö°¡ ÀÖ´Ù. */
+          /* ë¬´ì¡°ê±´ í•œ ë…¸ë“œë§Œ aging í•œë‹¤.
+           * nodeê°€ freeë˜ì—ˆìœ¼ë¯€ë¡œ, ì´ ë…¸ë“œë¥¼ ì•¡ì„¸ìŠ¤í•˜ëŠ” ê²ƒì€, 
+           * ì“°ë ˆê¸° ê°’ì„ ì½ëŠ” ê²ƒì´ë‹¤. ë‹¤ë¥¸ íŠ¸ëžœìž­ì…˜ì´ ë™ì¼ ì£¼ì†Œì˜ ë…¸ë“œë¥¼
+           * í• ë‹¹ë°›ì•„ ë‹¤ë¥¸ ê°’ì„ ê¸°ë¡í•  ìˆ˜ë„ ìžˆë‹¤. ë”°ë¼ì„œ freeëœ ë…¸ë“œì˜ nextë¥¼
+           * ì°¸ì¡°í•˜ë©´ ê¼¬ì´ëŠ” ìˆ˜ê°€ ìžˆë‹¤. */
           goto label_aging_again;
 #endif
         }

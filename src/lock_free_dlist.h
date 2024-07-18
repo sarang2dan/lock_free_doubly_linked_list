@@ -44,8 +44,8 @@ enum _dl_status
 
 /* Least significant 2 bits of the next pointer to indicate
  * the underlying node is logically DELETED or DIRTY*/
-/* NOTE: ÃÖ»óÀ§ 2ºñÆ®´Â »ç¿ëÇÏÁö ¾Ê´Â °ÍÀÌ ÁÁÀ½.
- * HP-UXÀÇ ¸Ş¸ğ¸® ¸ğµ¨  ¶§¹®. */
+/* NOTE: ìµœìƒìœ„ 2ë¹„íŠ¸ëŠ” ì‚¬ìš©í•˜ì§€ ì•ŠëŠ” ê²ƒì´ ì¢‹ìŒ.
+ * HP-UXì˜ ë©”ëª¨ë¦¬ ëª¨ë¸  ë•Œë¬¸. */
 static const uint64_t DL_NODE_DIRTY         = ((uint64_t)0x0000000000000001); // ((uint64_t)1 << 0)
 static const uint64_t DL_NODE_DELETED       = ((uint64_t)0x0000000000000002); // ((uint64_t)1 << 1)
 static const uint64_t DL_NODE_DELETED_MASK  = ((uint64_t)0xFFFFFFFFFFFFFFFD);

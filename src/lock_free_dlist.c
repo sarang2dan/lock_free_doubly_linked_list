@@ -329,24 +329,24 @@ DL_STATUS lf_dlist_insert_after( lf_dlist_t   * volatile l,
 
 
 #if 0
-¸®½ºÆ® ³ëµå »èÁ¦½Ã lf_dlist_delete()¸¦ È£ÃâÇÏ´Âµ¥,
-  ÀÌÈÄ¿¡ lf_dlist_correct_next()¸¦ È£ÃâÇØ¾ß ÇÑ´Ù.
-  »ç¿ë¹æ¹ý°ú ÀÌÀ¯´Â ¾Æ·¡¿Í °°´Ù.
+ë¦¬ìŠ¤íŠ¸ ë…¸ë“œ ì‚­ì œì‹œ lf_dlist_delete()ë¥¼ í˜¸ì¶œí•˜ëŠ”ë°,
+  ì´í›„ì— lf_dlist_correct_next()ë¥¼ í˜¸ì¶œí•´ì•¼ í•œë‹¤.
+  ì‚¬ìš©ë°©ë²•ê³¼ ì´ìœ ëŠ” ì•„ëž˜ì™€ ê°™ë‹¤.
 {
   cur_node_next = cursor->cur_node->next;
   if( DL_STATUS_OK == lf_dlist_delete( cursor->l, cursor->cur_node ) )
     {
       /* IMPORTANT:
-       * ¾Æ·¡ ÇÔ¼ö È£Ãâ ÀÌÀü±îÁö ¾Æ·¡¿Í °°Àº »óÈ²ÀÌ´Ù.
+       * ì•„ëž˜ í•¨ìˆ˜ í˜¸ì¶œ ì´ì „ê¹Œì§€ ì•„ëž˜ì™€ ê°™ì€ ìƒí™©ì´ë‹¤.
        * node1    <-------------------  node2
        *   |  \-----d---|                 ^
        *   ---------->  delnode -----d----|
        *
-       *   µû¶ó¼­ ¾Æ·¡ÇÔ¼ö¸¦ È£ÃâÇÏ¿©
+       *   ë”°ë¼ì„œ ì•„ëž˜í•¨ìˆ˜ë¥¼ í˜¸ì¶œí•˜ì—¬
        * node1  <----------------->   node2
        *     ^                          ^
        *     ----d---- delnode ----d----|
-       *  ¿Í °°Àº »ýÅÂ·Î ¸¸µé¾î ÁØ´Ù*/
+       *  ì™€ ê°™ì€ ìƒíƒœë¡œ ë§Œë“¤ì–´ ì¤€ë‹¤*/
       for( tmp = cursor->l->head; tmp != cursor->l->tail ; )
         {
           tmp = lf_dlist_correct_next( cursor->l,
