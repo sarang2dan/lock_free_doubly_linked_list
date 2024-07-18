@@ -22,7 +22,7 @@ int64_t __cas_64( volatile void * p, int64_t oldval, int64_t newval );
 #define atomic_dec_fetch(_ptr) __sync_sub_and_fetch(_ptr, 1)
 #define atomic_fetch_inc(_ptr) __sync_fetch_and_add(_ptr, 1)
 #define atomic_fetch_dec(_ptr) __sync_fetch_and_sub(_ptr, 1)
-#define mem_barrier()  asm("mfence")
+#define mem_barrier()  __sync_synchronize() // asm("nop")
 #endif /* USE_GCC_BUILTIN_ATOMIC */
 #else /* __GCC_HAVE_SYNC_COMPARE_AND_SWAP_8 */
 
